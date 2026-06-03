@@ -1,0 +1,13 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+{% import "utils.ji" as utils %}
+
+{{ utils.enum_imports(symbols, "../types/enums/index.js") }}
+{{ utils.types_imports(symbols, "../types/index.js") }}
+{{ utils.events_imports(symbols, "../types/events/index.js") }}
+{{ utils.args_imports(symbols, "../types/args/index.js") }}
+
+export interface LoreEventCallbackConfigInternal {
+  userContext?: number;
+  callback: (eventPtr: any, userContext: number) => void;
+};

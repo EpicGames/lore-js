@@ -1,0 +1,73 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+{% import "utils.ji" as utils %}
+
+{{ utils.enum_imports(symbols, "../enums/index.js") }}
+{{ utils.types_imports(symbols, "../index.js") }}
+{{ utils.events_imports(symbols, "../events/index.js") }}
+
+{#
+
+Export args Typescript interfaces and the corresponding Koffi struct definitions.
+
+For instance, for the `struct lore_global_args_t`
+    typedef struct lore_global_args_t {
+        struct lore_string_t identity;
+        uint8_t debug;
+        uint8_t force;
+        uint8_t offline;
+        uint8_t local;
+        uint32_t max_connections;
+        uint32_t search_limit;
+        uint8_t search_nearest;
+        uint8_t gc;
+    } lore_global_args_t;
+
+The result is:
+
+    export interface LoreGlobalArgs<LoreContext = string, LoreHash = string, LoreBranchId = string, LoreRepositoryId = string, LoreInstanceId = string, LorePartition = string> {
+      identity?: LoreString;
+      debug?: LoreBoolean;
+      force?: LoreBoolean;
+      offline?: LoreBoolean;
+      local?: LoreBoolean;
+      maxConnections?: number;
+      searchLimit?: number;
+      searchNearest?: LoreBoolean;
+      gc?: LoreBoolean;
+    }
+
+#}
+{% for struct_type, struct_fields in symbols.args.items() %}
+    export interface {{ pascal_case(struct_type.removesuffix("_t")) }}<LoreContext = string, LoreHash = string, LoreBranchId = string, LoreRepositoryId = string, LoreInstanceId = string, LorePartition = string> {
+      {% for field in struct_fields %}
+          {% if cToJsTypeMap[field.0] %}
+              {% if field.0 == "uint8_t" and field.1 == "data"%}
+                {% set field_js_type = "number" %}
+            {% else %}
+                {% set field_js_type = cToJsTypeMap[field.0] %}
+            {% endif %}
+          {% elif field.0.endswith("_array_t") %}
+              {% set field_js_type = pascal_case(field.0.removesuffix("_t")) + "<LoreContext, LoreHash, LoreBranchId, LoreRepositoryId, LoreInstanceId, LorePartition>" %}
+          {% elif field.0.endswith("_t") %}
+              {% set field_js_type = pascal_case(field.0.removesuffix("_t")) %}
+          {% else %}
+              {% set field_js_type = field.0 %}
+          {% endif %}
+          {% if field.3 %}
+            /** {{ "\n".join(field.3) }} */
+          {% endif %}
+          {% if field.2 != 0 %}
+              {{camel_case(field.1)}}?: {{ field_js_type }}[{{field.2}}];
+          {% else %}
+              {{camel_case(field.1)}}?: {{ field_js_type }};
+          {% endif %}
+      {% endfor %}
+    }
+{% endfor %}
+
+{# Exports a union type that covers all of the arg types #}
+export type LoreArgs =
+{% for struct_type, struct_fields in symbols.args.items() %}
+  | {{ pascal_case(struct_type.removesuffix("_t")) }}
+{% endfor %};

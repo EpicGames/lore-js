@@ -1,0 +1,68 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+{% import "utils.ji" as utils %}
+
+import koffi from "koffi";
+
+{{ utils.enum_imports(symbols, "../enums/index.js") }}
+{{ utils.enum_ffi_imports(symbols, "../enums/ffi.js") }}
+{{ utils.types_imports(symbols, "../index.js") }}
+{{ utils.types_ffi_imports(symbols, "../ffi.js") }}
+{{ utils.events_imports(symbols, "../events/index.js") }}
+{{ utils.events_ffi_imports(symbols, "../events/ffi.js") }}
+
+{#
+
+Export args Typescript interfaces and the corresponding Koffi struct definitions.
+
+For instance, for the `struct lore_global_args_t`
+    typedef struct lore_global_args_t {
+        struct lore_string_t identity;
+        uint8_t debug;
+        uint8_t force;
+        uint8_t offline;
+        uint8_t local;
+        uint32_t max_connections;
+        uint32_t search_limit;
+        uint8_t search_nearest;
+        uint8_t gc;
+    } lore_global_args_t;
+
+The result is:
+
+    export const LoreGlobalArgsStruct = koffi.struct("LoreGlobalArgs", {
+      identity: "LoreString",
+      debug: "uint8_t",
+      force: "uint8_t",
+      offline: "uint8_t",
+      local: "uint8_t",
+      maxConnections: "uint32_t",
+      searchLimit: "uint32_t",
+      searchNearest: "uint8_t",
+      gc: "uint8_t",
+    });
+
+#}
+{% for struct_type, struct_fields in symbols.args.items() %}
+    export const {{ pascal_case(struct_type.removesuffix("_t")) }}Struct = koffi.struct(
+        "{{ pascal_case(struct_type.removesuffix("_t")) }}",
+        {
+            {% for field in struct_fields %}
+                {% if field.0 in native_types %}
+                    {% set field_type = field.0 %}
+                {% elif field.0.endswith("_t") %}
+                    {% set field_type = pascal_case(field.0.removesuffix("_t")) %}
+                {% else %}
+                    {% set field_type = field.0 %}
+                {% endif %}
+                {% if field.2 != 0 %}
+                    {{camel_case(field.1)}}: "{{ field_type }}[{{field.2}}]",
+                {% else %}
+                    {{camel_case(field.1)}}: "{{ field_type }}",
+                {% endif %}
+            {% endfor %}
+        }
+    );
+{% endfor %}
+
+export const loadArgsFFI = () => {};

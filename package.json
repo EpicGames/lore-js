@@ -1,0 +1,78 @@
+{
+  "name": "@lore-vcs/sdk",
+  "version": "0.0.1-nightly.0",
+  "license": "MIT",
+  "author": "Epic Games, Inc.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./functions": {
+      "types": "./dist/functions/index.d.ts",
+      "import": "./dist/functions/index.js",
+      "require": "./dist/functions/index.cjs"
+    },
+    "./native": {
+      "types": "./dist/native/index.d.ts",
+      "import": "./dist/native/index.js",
+      "require": "./dist/native/index.cjs"
+    },
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/types/index.js",
+      "require": "./dist/types/index.cjs"
+    },
+    "./types/args": {
+      "types": "./dist/types/args/index.d.ts",
+      "import": "./dist/types/args/index.js",
+      "require": "./dist/types/args/index.cjs"
+    },
+    "./types/enums": {
+      "types": "./dist/types/enums/index.d.ts",
+      "import": "./dist/types/enums/index.js",
+      "require": "./dist/types/enums/index.cjs"
+    },
+    "./types/events": {
+      "types": "./dist/types/events/index.d.ts",
+      "import": "./dist/types/events/index.js",
+      "require": "./dist/types/events/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "pnpm run prettier:format && tsdown",
+    "test": "vitest --watch=false && pnpm run test:cjs",
+    "test:cjs": "node src/cjs/smoke.cjs",
+    "test:perf": "node src/perf/repository-dump.perf.ts",
+    "test:perf:mac:lowpower": "taskpolicy -c utility node src/perf/repository-dump.perf.ts",
+    "test:perf:linux": "nice -n -19 node src/perf/repository-dump.perf.ts",
+    "version:update": "pnpm run version:update:to \"${LORE_VERSION}\"",
+    "version:update:to": "pnpm version --no-git-tag-version",
+    "prettier:format": "prettier -w lore_js/**"
+  },
+  "dependencies": {
+    "koffi": "2.16.2"
+  },
+  "optionalDependencies": {
+    "@lore-vcs/sdk-amd64-unknown-linux": "workspace:*",
+    "@lore-vcs/sdk-amd64-unknown-windows": "workspace:*",
+    "@lore-vcs/sdk-arm64-apple-darwin": "workspace:*",
+    "@lore-vcs/sdk-arm64-graviton-linux": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.1",
+    "prettier": "^3.6.2",
+    "tsdown": "^0.12.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "packageManager": "pnpm@10.19.0",
+  "pnpm": {
+    "onlyBuiltDependencies": []
+  }
+}

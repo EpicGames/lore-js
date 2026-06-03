@@ -1,0 +1,368 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+{% import "utils.ji" as utils %}
+
+import { lore as loreInternal } from "./native/index.js";
+
+{{ utils.enum_imports(symbols, "./types/enums/index.js") }}
+{{ utils.enum_ffi_imports(symbols, "./types/enums/ffi.js") }}
+{{ utils.types_imports(symbols, "./types/index.js") }}
+{{ utils.types_ffi_imports(symbols, "./types/ffi.js") }}
+{{ utils.events_imports(symbols, "./types/events/index.js") }}
+{{ utils.events_ffi_imports(symbols, "./types/events/ffi.js") }}
+{{ utils.args_imports(symbols, "./types/args/index.js") }}
+{{ utils.args_ffi_imports(symbols, "./types/args/ffi.js") }}
+{{ utils.functions_imports(symbols, "./functions/index.js") }}
+{{ utils.functions_ffi_imports(symbols, "./functions/ffi.js") }}
+
+{# Utility types and interfaces for strict Typescript definitions #}
+type LoreFunction = (
+    globals: LoreGlobalArgs,
+    args: LoreArgs,
+    callback: LoreEventCallbackConfig
+) => Promise<LoreFnResponseCode>;
+
+type EventSubscriptions = Partial<Record<LoreEventTag, Set<LoreEventCallbackFunction>>>;
+
+interface LoreFluentState {
+  globalArgs: LoreGlobalArgs;
+  args: LoreArgs;
+  callbackConfig: Partial<LoreEventCallbackConfig & { eager?: boolean }>;
+  userContext?: number;
+  filter: LoreEventTag[];
+  started: boolean;
+  fn?: LoreFunction;
+  errors: LoreErrorEvent[];
+  eventSubcriptions: EventSubscriptions;
+}
+
+{# Shallow clone of the given LoreFluentState object. #}
+const cloneState = (state: LoreFluentState): LoreFluentState => {
+  return {
+    globalArgs: { ...state.globalArgs },
+    args: { ...state.args },
+    callbackConfig: { ...state.callbackConfig },
+    userContext: state.userContext,
+    filter: [...state.filter],
+    started: state.started,
+    errors: [...state.errors],
+    eventSubcriptions: state.eventSubcriptions,
+  };
+};
+
+interface IAsyncIteratorQueueResolveData {
+  event?: LoreEvent;
+  done?: boolean;
+}
+
+{# Error class for thrown Lore errors. #}
+export class LoreError extends Error {
+  constructor(public loreErrors?: LoreErrorEvent[], public events?: LoreEvent[]) {
+    super(loreErrors?.map((error) => error.data.errorInner).join("\n") ?? "Error when calling Lore");
+  }
+}
+
+const handleEventSubscriptions = (
+  event: LoreEventFFI,
+  eventSubcriptions: EventSubscriptions
+) => {
+  if (eventSubcriptions[event.tag]) {
+    for (const handler of eventSubcriptions[event.tag]!.values()) {
+      handler(event);
+    }
+  }
+}
+
+{# Symbol for storing the fluent API state. Using a Symbol so that the internal state
+   value cannot be accessed or modified by external users.
+#}
+const STATE = Symbol("lore.fluent.internal");
+
+{# The Fluent API interface. #}
+export interface LoreFluentApi {
+    [STATE]: LoreFluentState;
+    filterByType: (...args: LoreEventTag[]) => LoreFluentApi;
+    userContext: (userContext: number) => LoreFluentApi;
+    callback: (cb: LoreEventCallbackFunction) => LoreFluentApi;
+    waitAsync: () => Promise<LoreFnResponseCode>;
+    collectAsync: () => Promise<LoreEvent[]>;
+    asyncIter(): AsyncGenerator<LoreEvent, void, unknown>;
+}
+
+{# Creates an executor instance that keeps track of the fluent API call and its
+   accumulated configuration.
+#}
+const createLoreExecutor = (_state: LoreFluentState, args: LoreArgs, fn: LoreFunction, globalArgsOverride?: LoreGlobalArgs): LoreFluentApi => {
+  const _stateClone = cloneState(_state);
+  _stateClone.args = { ..._stateClone.args, ...args } as LoreArgs;
+  _stateClone.globalArgs = { ..._stateClone.globalArgs, ...globalArgsOverride };
+  _stateClone.fn = fn;
+
+  {# The implementation for the LoreFluentApi interface: #}
+  const loreExecutor: LoreFluentApi = {
+    [STATE]: _stateClone,
+    {# Set filter list. #}
+    filterByType: (...args: LoreEventTag[]) => {
+      if (loreExecutor[STATE].started) {
+        throw new Error("Already started");
+      }
+      loreExecutor[STATE].filter = args;
+      return loreExecutor;
+    },
+    {# Set callback. #}
+    callback: (cb: LoreEventCallbackFunction) => {
+      if (loreExecutor[STATE].started) {
+        throw new Error("Already started");
+      }
+      loreExecutor[STATE].callbackConfig.callback = (event: LoreEventFFI) => {
+        if (event.tag === LoreEventTag.ERROR) {
+          loreExecutor[STATE].errors.push(event.clone());
+        }
+        handleEventSubscriptions(event, loreExecutor[STATE].eventSubcriptions);
+        if (loreExecutor[STATE].filter.length > 0) {
+          if (loreExecutor[STATE].filter.includes(event.tag)) {
+            cb(event);
+          }
+        } else {
+          cb(event);
+        }
+      };
+      return loreExecutor;
+    },
+    {# Set user context #}
+    userContext: (userContext: number) => {
+      if (loreExecutor[STATE].started) {
+        throw new Error("Already started");
+      }
+      loreExecutor[STATE].callbackConfig.userContext = userContext;
+      return loreExecutor;
+    },
+    {# Start execution in waitAsync mode. #}
+    waitAsync: async () => {
+      if (loreExecutor[STATE].started) {
+        throw new Error("Already started");
+      }
+      loreExecutor[STATE].started = true;
+      if (!loreExecutor[STATE].callbackConfig.callback) {
+        loreExecutor[STATE].callbackConfig.callback = () => {};
+      }
+      if (!loreExecutor[STATE].fn) {
+        throw new Error("Lore function not set");
+      }
+      const returnCode = await loreExecutor[STATE].fn(
+        loreExecutor[STATE].globalArgs,
+        loreExecutor[STATE].args,
+        loreExecutor[STATE].callbackConfig as LoreEventCallbackConfig
+      );
+      if (returnCode !== 0) {
+        throw new LoreError(loreExecutor[STATE].errors);
+      }
+      return returnCode;
+    },
+    {# Start execution in collectAsync mode. #}
+    collectAsync: async () => {
+      if (loreExecutor[STATE].started) {
+        throw new Error("Already started");
+      }
+      loreExecutor[STATE].started = true;
+      if (loreExecutor[STATE].callbackConfig.callback) {
+        throw new Error("Callback fn set, but trying to call collect");
+      }
+      const events: LoreEvent[] = [];
+      loreExecutor[STATE].callbackConfig.callback = (event: LoreEventFFI) => {
+        if (event.tag === LoreEventTag.ERROR) {
+          loreExecutor[STATE].errors.push(event.clone());
+        }
+        handleEventSubscriptions(event, loreExecutor[STATE].eventSubcriptions);
+        if (loreExecutor[STATE].filter.length > 0) {
+          if (loreExecutor[STATE].filter.includes(event.tag)) {
+            events.push(event.clone());
+          }
+        } else {
+          events.push(event.clone());
+        }
+      };
+      {# eager FFI decoding since we know we are going to clone immediately #}
+      loreExecutor[STATE].callbackConfig.eager = true;
+      if (!loreExecutor[STATE].fn) {
+        throw new Error("Lore function not set");
+      }
+      const returnCode = await loreExecutor[STATE].fn(
+        loreExecutor[STATE].globalArgs,
+        loreExecutor[STATE].args,
+        loreExecutor[STATE].callbackConfig as LoreEventCallbackConfig
+      );
+      if (returnCode !== 0) {
+        throw new LoreError(loreExecutor[STATE].errors, events);
+      }
+      return events;
+    },
+    {# Start execution in asyncIter mode. #}
+    async *asyncIter() {
+      if (loreExecutor[STATE].started) {
+        throw new Error("Already started");
+      }
+      loreExecutor[STATE].started = true;
+      if (loreExecutor[STATE].callbackConfig.callback) {
+        throw new Error("Callback fn set, but trying to call asyncIter");
+      }
+      {# A queue of unprocessed events. #}
+      const queue: LoreEvent[] = [];
+
+      {# A placeholder for a promise that is resolved when an event arrives,
+         if asyncIter.next() is called before there is anything in the queue.
+      #}
+      let resolveEvent: ((data: IAsyncIteratorQueueResolveData) => void) | null = null;
+      let done = false;
+      {#
+        If done, discard the event.
+        If user has called next() with an empty queue and is awaiting,
+        emit the event through the user's awaited Promise.
+        If the user is not waiting for an event, push the event to the queue.
+        The event needs to be cloned and decoded here, because when the async iterator
+        gets execution turn, the callback has already returned control back to lore lib, and
+        the memory has been released.
+      #}
+      const emitOrStoreEvent = (event: LoreEvent) => {
+        if (done) {
+          return;
+        }
+        if (resolveEvent) {
+          resolveEvent({ event });
+          resolveEvent = null;
+        } else {
+          queue.push(event);
+        }
+      };
+      {#
+        Callback handler. Performs filtering, and calls
+        emitOrStoreEvent to handle the event.
+        When getting the END event, marks the execution as done.
+      #}
+      loreExecutor[STATE].callbackConfig.callback = (event) => {
+        if (event.tag === LoreEventTag.ERROR) {
+          loreExecutor[STATE].errors.push(event.clone());
+        }
+        handleEventSubscriptions(event, loreExecutor[STATE].eventSubcriptions);
+        if (loreExecutor[STATE].filter.length > 0) {
+          if (loreExecutor[STATE].filter.includes(event.tag)) {
+            emitOrStoreEvent(event.clone());
+          }
+        } else {
+          emitOrStoreEvent(event.clone());
+        }
+        if (event.tag === LoreEventTag.END) {
+          done = true;
+          if (resolveEvent) {
+            resolveEvent({ done });
+            resolveEvent = null;
+          }
+        }
+      };
+      {# eager FFI decoding since we know we are going to clone immediately #}
+      loreExecutor[STATE].callbackConfig.eager = true;
+      if (!loreExecutor[STATE].fn) {
+        throw new Error("Lore function not set");
+      }
+      let lorePromise;
+      try {
+        lorePromise = loreExecutor[STATE].fn(
+          loreExecutor[STATE].globalArgs,
+          loreExecutor[STATE].args,
+          loreExecutor[STATE].callbackConfig as LoreEventCallbackConfig
+        );
+        {# Async iterator main loop: Yields events from the queue, or if the
+           queue is empty, initializes a Promise that is resolved when we get
+           the next event from Lore callback. Then yields that event.
+        #}
+        while (!done) {
+          if (queue.length > 0) {
+            const event = queue.shift();
+            yield event as LoreEvent;
+          } else {
+            const { event } = await new Promise<IAsyncIteratorQueueResolveData>((resolve) => {
+              resolveEvent = resolve;
+            });
+            if (event) {
+              yield event;
+            }
+          }
+        }
+      } finally {
+        done = true;
+        {# Even if bailing out prematurely from the async iterator loop,
+           wait for the Lore call to end and clean up before returning control.
+        #}
+        const returnCode = await lorePromise;
+        {# Throw an error, if the Lore call failed. #}
+        if (returnCode !== 0) {
+          throw new LoreError(loreExecutor[STATE].errors);
+        }
+      }
+    },
+  };
+  return loreExecutor;
+};
+
+{#
+
+Generates the public fluent API.
+
+`lore.open(repository_path, config?, globalArgs?)` returns an API that has operations of the following format:
+
+      branchDescribe: (
+        args: LoreBranchDescribeArgs,
+        globalArgsOverride?: LoreGlobalArgs
+      ) => LoreFluentApi:
+
+#}
+
+export const lore = {
+  [STATE]: {
+    globalArgs: {},
+    args: {},
+    callbackConfig: { userContext: 0, callback: undefined },
+    filter: [],
+    started: false,
+    errors: [],
+    eventSubcriptions: {} as EventSubscriptions,
+  },
+  {% for function_name, function_args in symbols.functions.items() %}
+    {% if function_name not in ignored_functions and "async" not in function_name %}
+      {% if function_name in symbols.functions_comments %}
+        /** {{ "\n".join(symbols.functions_comments[function_name]) }} */
+      {% endif %}
+      {{ camel_case(function_name.removeprefix("lore_")) }}: (globalArgs: LoreGlobalArgs, args: {{ pascal_case(function_args.removesuffix("_t")) }}) =>
+        createLoreExecutor(
+          lore[STATE],
+          args,
+          loreInternal.{{ camel_case(function_name.removeprefix("lore_")) }} as LoreFunction,
+          globalArgs
+        ),
+    {% endif %}
+  {% endfor %}
+  logConfigure: (logConfig: LoreLogConfig) => {
+    const returnCode = loreInternal.logConfigure(logConfig);
+    if (returnCode !== 0) {
+      throw new LoreError();
+    }
+    return returnCode;
+  },
+  shutdown: () =>  {
+    const returnCode = loreInternal.shutdown();
+    if (returnCode !== 0) {
+      throw new LoreError();
+    }
+    return returnCode;
+  },
+  version: () => loreInternal.version(),
+  globalCallback: <T extends LoreEventTag>(event: T, callback: (event: LoreEventFFITyped<T>) => void) => {
+    if (!lore[STATE].eventSubcriptions[event]) {
+      lore[STATE].eventSubcriptions[event] = new Set<LoreEventCallbackFunction>();
+    }
+    lore[STATE].eventSubcriptions[event].add(callback as LoreEventCallbackFunction);
+    return () => {
+      lore[STATE].eventSubcriptions[event]?.delete(callback as LoreEventCallbackFunction);
+    }
+  },
+};

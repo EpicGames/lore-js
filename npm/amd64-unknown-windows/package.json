@@ -1,0 +1,25 @@
+{
+  "name": "@lore-vcs/sdk-amd64-unknown-windows",
+  "version": "0.0.1-dev",
+  "type": "module",
+  "main": "./index.cjs",
+  "module": "./index.js",
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "lorelib-amd64-unknown-windows.dll",
+    "index.js",
+    "index.cjs"
+  ],
+  "exports": {
+    ".": {
+      "import": "./index.js",
+      "require": "./index.cjs"
+    },
+    "./lore": "./lorelib-amd64-unknown-windows.dll"
+  }
+}

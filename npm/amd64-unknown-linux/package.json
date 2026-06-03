@@ -1,0 +1,28 @@
+{
+  "name": "@lore-vcs/sdk-amd64-unknown-linux",
+  "version": "0.0.1-dev",
+  "type": "module",
+  "main": "./index.cjs",
+  "module": "./index.js",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "files": [
+    "lorelib-amd64-unknown-linux.so",
+    "index.js",
+    "index.cjs"
+  ],
+  "exports": {
+    ".": {
+      "import": "./index.js",
+      "require": "./index.cjs"
+    },
+    "./lore": "./lorelib-amd64-unknown-linux.so"
+  }
+}

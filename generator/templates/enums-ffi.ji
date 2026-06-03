@@ -1,0 +1,28 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+{% import "utils.ji" as utils %}
+
+import koffi from "koffi";
+
+{#
+
+Export Typescript enums and the corresponding Koffi aliases, that map them to uint32_t in C structs.
+
+For instance, for the `enum lore_branch_location_t`
+    typedef enum lore_branch_location_t {
+        LORE_BRANCH_LOCATION_LOCAL = 0,
+        LORE_BRANCH_LOCATION_REMOTE = 1,
+    } lore_branch_location_t;
+
+the result is:
+
+    export const LoreBranchLocationDef = koffi.alias(
+        "LoreBranchLocation",
+        "uint32_t"
+    );
+#}
+{% for enum_name, enum_values in symbols.enums.items() %}
+    export const {{pascal_case(enum_name.removesuffix("_t"))}}Def = koffi.alias('{{pascal_case(enum_name.removesuffix("_t"))}}', 'uint32_t');
+{% endfor %}
+
+export const loadEnumsFFI = () => {};

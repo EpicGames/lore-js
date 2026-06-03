@@ -1,0 +1,151 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+{% import "utils.ji" as utils %}
+
+import koffi, { KoffiConfig } from "koffi";
+
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+
+{{ utils.enum_imports(symbols, "../types/enums/index.js") }}
+{{ utils.enum_ffi_imports(symbols, "../types/enums/ffi.js") }}
+{{ utils.types_imports(symbols, "../types/index.js") }}
+{{ utils.types_ffi_imports(symbols, "../types/ffi.js") }}
+{{ utils.events_imports(symbols, "../types/events/index.js") }}
+{{ utils.events_ffi_imports(symbols, "../types/events/ffi.js") }}
+{{ utils.args_imports(symbols, "../types/args/index.js") }}
+{{ utils.args_ffi_imports(symbols, "../types/args/ffi.js") }}
+{{ utils.functions_imports(symbols, "./index.js") }}
+
+const cwd =
+  typeof __dirname !== "undefined"
+    ? __dirname || process.cwd()
+    : dirname(fileURLToPath(import.meta.url));
+
+{# Try to resolve the library path even if it was modified by Electron ASAR packaging.
+   Electron modifies the Node internals to return JS module file system paths to be under
+   "resources/app.asar/node_modules/". This is OK for most packages, but the packages with
+   binary content are unpacked under the file system path "resources/app.asar.unpacked/node_modules/".
+   Loads the given library if it exists, otherwise tries to replace app.asar -> app.asar.unpacked.
+#}
+const asarResolveLibrary = (loreLibPath: string) => {
+  const asarUnpackedPath = loreLibPath.replace(
+    /([/\\])(app\.asar)([/\\]node_modules[/\\]@lore-vcs[/\\]sdk)/,
+    "$1$2.unpacked$3"
+  );
+  return koffi.load(asarUnpackedPath);
+};
+
+{# Function that figures out the dynamic library path. #}
+const getPlatformLibPath = (pkg: unknown): string => {
+  if (typeof pkg === "string") {
+    return pkg;
+  }
+  if (pkg && typeof pkg === "object" && "default" in pkg) {
+    return (pkg as { default: string }).default;
+  }
+  throw new Error("Invalid platform package export");
+};
+
+const defaultLibPath = () => {
+  if (process.platform === "win32") {
+    try {
+      return getPlatformLibPath(
+        require("@lore-vcs/sdk-amd64-unknown-windows")
+      );
+    } catch {
+      return join(cwd, "..", "..", "npm", "amd64-unknown-windows", "lorelib-amd64-unknown-windows.dll");
+    }
+  } else if (process.platform === "darwin") {
+    try {
+      return getPlatformLibPath(
+        require("@lore-vcs/sdk-arm64-apple-darwin")
+      );
+    } catch {
+      return join(cwd, "..", "..", "npm", "arm64-apple-darwin", "lorelib-arm64-apple-darwin.dylib");
+    }
+  } else if (process.platform === "linux") {
+    if (process.arch === "arm64") {
+      try {
+        return getPlatformLibPath(
+          require("@lore-vcs/sdk-arm64-graviton-linux")
+        );
+      } catch {
+        return join(cwd, "..", "..", "npm", "arm64-graviton-linux", "lorelib-arm64-graviton-linux.so");
+      }
+    } else {
+      try {
+        return getPlatformLibPath(
+          require("@lore-vcs/sdk-amd64-unknown-linux")
+        );
+      } catch {
+        return join(cwd, "..", "..", "npm", "amd64-unknown-linux", "lorelib-amd64-unknown-linux.so");
+      }
+    }
+  }
+  throw new Error("Unknown platform");
+};
+
+{# Configure max simultaneous FFI calls, default is 64 #}
+koffi.config({
+  max_async_calls: 256,
+  async_stack_size: 2 * 1024 * 1024,
+} as KoffiConfig)
+
+{# Load the DLL #}
+const loreLibPath = process.env.LORE_LIB_PATH ?? defaultLibPath();
+const lib = asarResolveLibrary(loreLibPath);
+
+{# Define the internal C callback type. This call will be converted to JS side callback after decoding the event. #}
+export const LoreEventCallbackFunctionInternal = koffi.proto("LoreEventCallbackFunction", "void", [
+  koffi.pointer("uint8_t"),
+  "uint64_t",
+]);
+
+export const LoreEventCallbackConfigInternalStruct = koffi.struct("LoreEventCallbackConfig", {
+  userContext: "uint64_t",
+  callback: koffi.pointer(LoreEventCallbackFunctionInternal),
+});
+
+{#
+
+Export the LoreLib C API functions with event callbacks as Koffi functions.
+
+For example for the function `lore_branch_create_async`
+
+    void lore_branch_create_async(const struct lore_config_t *config,
+                                 const struct lore_global_args_t *globals,
+                                 const struct lore_branch_create_args_t *args,
+                                 struct lore_event_callback_config_t callback);
+
+the result is:
+
+    export const lore_branch_create = lib.func("lore_branch_create", "int32_t", [
+      koffi.pointer(LoreGlobalArgsStruct),
+      koffi.pointer(LoreBranchCreateArgsStruct),
+      LoreEventCallbackConfigInternalStruct,
+    ]);
+
+#}
+{% for function_name, function_args in symbols.functions.items() %}
+    {% if function_name not in ignored_functions and "async" not in function_name %}
+        export const {{function_name}} = lib.func("{{function_name}}", "int32_t", [
+            koffi.pointer(LoreGlobalArgsStruct),
+            koffi.pointer({{pascal_case(function_args.removesuffix("_t"))}}Struct),
+            LoreEventCallbackConfigInternalStruct,
+        ]);
+    {% endif %}
+{% endfor %}
+
+{# Export the remaining LoreLib C API functions without event callbacks #}
+export const loreLogConfigure = lib.func("lore_log_configure", "int32_t", [
+  koffi.pointer(LoreLogConfigStruct),
+]);
+
+export const loreShutdown = lib.func("lore_shutdown", "int32_t", []);
+
+export const loreVersion = lib.func("lore_version", "char*", []);
+
+export const loadFunctionsFFI = () => {};

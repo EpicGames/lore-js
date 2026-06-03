@@ -1,0 +1,127 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+{% import "utils.ji" as utils %}
+
+import koffi from "koffi";
+
+{{ utils.enum_imports(symbols, "./enums/index.js") }}
+{{ utils.enum_ffi_imports(symbols, "./enums/ffi.js") }}
+
+export const LoreNodeIdType = koffi.alias("lore_node_id_t", "uint32_t");
+
+{# Export types that have a custom mapping between Lore C types and JS types #}
+{# `string` is declared as `uint8_t*` (not `char*`) so Koffi does not auto-decode it
+   as a NUL-terminated C string. Lore string contents can include arbitrary bytes,
+   including NUL bytes (e.g. raw UTF-16 file content in diff output), and must be
+   decoded manually using the explicit length. See convertFromLoreDatatype. #}
+export const LoreStringStruct = koffi.struct("LoreString", {
+  string: "uint8_t*",
+  length: "uintptr_t",
+});
+
+export const LoreHashStruct = koffi.struct("LoreHash", {
+  data: "uint8_t[32]",
+});
+
+export const LoreContextStruct = koffi.struct("LoreContext", {
+  data: "uint8_t[16]",
+});
+
+export const LorePartitionStruct = koffi.struct("LorePartition", {
+  data: "uint8_t[16]",
+});
+
+export const LoreAddressStruct = koffi.struct("LoreAddress", {
+  hash: "LoreHash",
+  context: "LoreContext",
+});
+
+export const LoreBranchIdStruct = koffi.alias("LoreBranchId", "LoreContext");
+
+export const LoreRepositoryIdStruct = koffi.alias("LoreRepositoryId", "LorePartition");
+
+export const LoreInstanceIdStruct = koffi.struct("LoreInstanceId", {
+  data: "uint8_t[16]",
+});
+
+export const LoreBytesStruct = koffi.struct("LoreBytes", {
+    ptr: "uint8_t*",
+    len: "uintptr_t",
+});
+
+export const LoreBinaryStruct = koffi.struct("LoreBinary", {
+    payload: "uint8_t*",
+    length: "uintptr_t",
+});
+
+{#
+
+Export Lore shared type Typescript interfaces and the corresponding Koffi struct definitions.
+
+For instance, for the `struct lore_config_t`
+
+    typedef struct lore_global_args_t {
+      struct lore_string_t repository_path;
+      struct lore_string_t correlation_id;
+      struct lore_string_t identity;
+    } lore_global_args_t;
+
+the result is:
+
+    export const LoreGlobalArgsStruct = koffi.struct("LoreGlobalArgs", {
+      repositoryPath: "LoreString",
+      correlationId: "LoreString",
+      identity: "LoreString",
+    });
+
+
+#}
+{% for struct_type, struct_fields in symbols.types.items() %}
+    {% if struct_type not in custom_types %}
+        export const {{ pascal_case(struct_type.removesuffix("_t")) }}Struct = koffi.struct(
+            "{{ pascal_case(struct_type.removesuffix("_t")) }}",
+            {
+                {% for field in struct_fields %}
+                    {% if field.0.endswith("*") %}
+                        {% set pointer_suffix = "*" %}
+                    {% else %}
+                        {% set pointer_suffix = "" %}
+                    {% endif %}
+                    {% if field.0.removesuffix("*") in native_types %}
+                        {% set field_type = field.0.removesuffix("*") %}
+                    {% elif field.0.removesuffix("*").endswith("_t") %}
+                        {% set field_type = pascal_case(field.0.removesuffix("*").removesuffix("_t")) %}
+                    {% else %}
+                        {% set field_type = field.0.removesuffix("*") %}
+                    {% endif %}
+                    {% if field.2 != 0 %}
+                        {{camel_case(field.1)}}: "{{ field_type }}[{{field.2}}]",
+                    {% else %}
+                        {{camel_case(field.1)}}: "{{ field_type }}{{ pointer_suffix }}",
+                    {% endif %}
+                {% endfor %}
+            }
+        );
+    {% endif %}
+{% endfor %}
+
+{# Export more types that have a custom mapping between Lore C types and JS types #}
+
+{# Export Lore metadata union C definition #}
+export const LoreMetadataUnion = koffi.union({
+  address: LoreAddressStruct,
+  boolean: "uint8_t",
+  binary: LoreBinaryStruct,
+  context: LoreContextStruct,
+  hash: LoreHashStruct,
+  numeric: "uint64_t",
+  string: LoreStringStruct,
+});
+
+{# Export Lore metadata C struct definition #}
+export const LoreMetadataStruct = koffi.struct("LoreMetadata", {
+  tag: "uint32_t",
+  data: koffi.array("uint8_t", koffi.sizeof(LoreMetadataUnion)),
+});
+
+export const loadTypesFFI = () => {};

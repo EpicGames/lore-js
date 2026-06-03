@@ -1,0 +1,555 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+{% import "utils.ji" as utils %}
+
+import koffi from "koffi";
+
+{{ utils.enum_imports(symbols, "../types/enums/index.js") }}
+{{ utils.enum_ffi_imports(symbols, "../types/enums/ffi.js") }}
+{{ utils.types_imports(symbols, "../types/index.js") }}
+{{ utils.types_ffi_imports(symbols, "../types/ffi.js") }}
+{{ utils.events_imports(symbols, "../types/events/index.js") }}
+{{ utils.events_ffi_imports(symbols, "../types/events/ffi.js") }}
+{{ utils.args_imports(symbols, "../types/args/index.js") }}
+{{ utils.args_ffi_imports(symbols, "../types/args/ffi.js") }}
+{{ utils.functions_imports(symbols, "../functions/index.js") }}
+{{ utils.functions_ffi_imports(symbols, "../functions/ffi.js") }}
+
+{# Helper functions for generating Lore types from JS types: #}
+const toLoreString = (str: string) => {
+  {# LoreString.string is declared as uint8_t* (see types-ffi.ji) so Koffi does not
+     auto-decode it as a NUL-terminated C string. Pass raw UTF-8 bytes here so the
+     pointer type matches; the matching length keeps the read bounded. #}
+  const bytes = Buffer.from(str, "utf-8");
+  return {
+    string: bytes,
+    length: bytes.byteLength,
+  };
+};
+
+{# Decodes a LoreString (uint8_t* pointer + length) returned from native code into a
+   JS string. Bytes are interpreted as UTF-8; invalid UTF-8 sequences are replaced
+   with U+FFFD. Using uint8_t* (not char*) avoids Koffi truncating at the first NUL
+   byte, which would corrupt strings that legitimately contain NUL bytes (e.g. raw
+   UTF-16 file content in diff output). #}
+const fromLoreString = (raw: { string: any; length: bigint | number }): string => {
+  const byteLength = Number(raw.length);
+  if (!raw.string || byteLength === 0) {
+    return "";
+  }
+  const bytes = koffi.decode(raw.string, "uint8_t", byteLength);
+  return new TextDecoder("utf-8").decode(bytes);
+};
+
+const toLoreBytes = (data: LoreBytes) => {
+  return {
+    ptr: data,
+    len: data.byteLength,
+  };
+};
+
+const toLoreBinary = (data: LoreBinary) => {
+  return {
+    payload: data,
+    length: data.byteLength,
+  };
+};
+
+const byteArrayToHexString = (array: Uint8Array): string => 
+  Array.from(array).map((decimal) => decimal.toString(16).padStart(2, "0")).join('');
+
+const hexStringToByteArray = (hex: string): Uint8Array => {                                                                                   
+  const bytes = new Uint8Array(hex.length / 2);                                                                                               
+  for (let i = 0; i < bytes.length; i++) {                                                                                                    
+    bytes[i] = parseInt(hex.substr(i * 2, 2), 16);                                                                                            
+  }                                                                                   
+  return bytes;                                                                                                                               
+};                                                                                    
+
+const toLoreContext = (context: LoreContextInternal): LoreContextBinary => {
+  context.toString = function() { return byteArrayToHexString(this.data); };
+  (context as any).toJSON = function() { return this.toString(); };
+  return context as LoreContextBinary;
+}
+
+const toLoreHash = (hash: LoreHashInternal): LoreHashBinary => {
+  hash.toString = function() { return byteArrayToHexString(this.data); };
+  (hash as any).toJSON = function() { return this.toString(); };
+  return hash as LoreHashBinary;
+}
+
+const toLorePartition = (partition: LorePartitionInternal): LorePartitionBinary => {
+  partition.toString = function() { return byteArrayToHexString(this.data); };
+  (partition as any).toJSON = function() { return this.toString(); };
+  return partition as LorePartitionBinary;
+}
+
+const toLoreBranchId = (branchId: LoreBranchIdInternal): LoreBranchIdBinary => {
+  return toLoreContext(branchId) as LoreBranchIdBinary;
+}
+
+const toLoreRepositoryId = (repositoryId: LoreRepositoryIdInternal): LoreRepositoryIdBinary => {
+  return toLorePartition(repositoryId) as LoreRepositoryIdBinary;
+}
+
+const toLoreInstanceId = (instanceId: LoreInstanceIdInternal): LoreInstanceIdBinary => {
+  instanceId.toString = function() { return byteArrayToHexString(this.data); };
+  (instanceId as any).toJSON = function() { return this.toString(); };
+  return instanceId as LoreInstanceIdBinary;
+}
+
+{# Converts the given JS object to another object that can be given as an argument to the Lore C API.
+   Maps all the data fields defined in convertOptions from the native JS types to the corresponding
+   Lore datatypes. E.g. booleans are mapped to 0 or 1, strings to LoreStrings and array types to the
+   corresponding Lore array structs that have a count field and a data pointer.
+#}
+const isValueDefined = (data: Record<string, unknown>, key: string) => data[key] != null;
+const convertToLoreDatatype = (args: any, convertOptions: IDatatypeConvertOptions): any => {
+  const convertedArgs = {...args};
+  convertOptions.loreBoolean?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreBoolean) => {
+    convertedArgs[loreBoolean] = convertedArgs[loreBoolean] ? 1 : 0;
+  });
+  convertOptions.loreString?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreString) => {
+    convertedArgs[loreString] = toLoreString(convertedArgs[loreString]);
+  });
+  convertOptions.loreBytes?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreBytes) => {
+    convertedArgs[loreBytes] = toLoreBytes(convertedArgs[loreBytes]);
+  });
+  convertOptions.loreBinary?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreBinary) => {
+    convertedArgs[loreBinary] = toLoreBinary(convertedArgs[loreBinary]);
+  });
+  convertOptions.lorePartition?.filter((key) => isValueDefined(convertedArgs, key)).forEach((lorePartition) => {
+    convertedArgs[lorePartition] = { data: hexStringToByteArray(convertedArgs[lorePartition]) };
+  });
+  convertOptions.loreContext?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreContext) => {
+    convertedArgs[loreContext] = { data: hexStringToByteArray(convertedArgs[loreContext]) };
+  });
+  convertOptions.loreAddress?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreAddress) => {
+    convertedArgs[loreAddress] = {
+      hash: { data: hexStringToByteArray(convertedArgs[loreAddress].hash) },
+      context: { data: hexStringToByteArray(convertedArgs[loreAddress].context) },
+    };
+  });
+  convertOptions.arrayTypes?.filter((arrayType) => isValueDefined(convertedArgs, arrayType.field)).forEach((arrayType) => {
+    const data = convertedArgs[arrayType.field] ?? [];
+    convertedArgs[arrayType.field] = {
+      ptr: data.map((entry: any) => convertToLoreDatatype({ ptr: entry }, arrayType.conversionTypes).ptr),
+      count: data.length
+    };
+  });
+  convertOptions.complexTypes?.filter((complexType) => isValueDefined(convertedArgs, complexType.field)).forEach((complexType) => {
+    convertedArgs[complexType.field] = convertToLoreDatatype(convertedArgs[complexType.field], complexType.conversionTypes);
+  });
+  return convertedArgs;
+}
+
+{# Converts the given raw Koffi object to a JS object.
+   Maps all the data fields defined in convertOptions from the Lore types to the corresponding
+   native JS datatypes. E.g. uint8_t booleans are mapped to false/true, LoreStrings to strings, and
+   the array types with a data pointer and count are decoded to native JS arrays.
+#}
+const convertFromLoreDatatype = (args: any, convertOptions: IDatatypeConvertOptions, eager?: boolean): any => {
+  const convertedArgs = {...args};
+  if (!eager && convertOptions.loreString?.length) {
+    convertedArgs[STRING_POINTERS] = {}; 
+    convertedArgs[STRING_CACHE] = {}; 
+  }
+  convertOptions.loreBoolean?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreBoolean) => {
+    convertedArgs[loreBoolean] = !!convertedArgs[loreBoolean];
+  });
+  convertOptions.loreString?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreString) => {
+    if (eager) {
+      convertedArgs[loreString] = fromLoreString(convertedArgs[loreString]);
+    } else {
+      {# Save the original FFI string pointer for later use #}
+      convertedArgs[STRING_POINTERS][loreString] = convertedArgs[loreString];
+      {# Overwrite with a lazy-evaluated string property that decodes the FFI memory on first access #}
+      Object.defineProperty(convertedArgs, loreString, {
+        get() {
+          if (this[STRING_CACHE][loreString] === undefined) {
+            this[STRING_CACHE][loreString] = fromLoreString(this[STRING_POINTERS][loreString]);
+            this[STRING_POINTERS][loreString] = null;
+          }
+          return this[STRING_CACHE][loreString];
+        },
+        enumerable: true,
+        configurable: true,
+      });
+    }
+  });
+  convertOptions.loreBytes?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreBytes) => {
+    convertedArgs[loreBytes] = koffi.decode(convertedArgs[loreBytes].ptr, "uint8_t", convertedArgs[loreBytes].len);
+  });
+  convertOptions.loreBinary?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreBinary) => {
+    convertedArgs[loreBinary] = koffi.decode(convertedArgs[loreBinary].payload, "uint8_t", convertedArgs[loreBinary].length);
+  });
+  convertOptions.loreContext?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreContext) => {
+    convertedArgs[loreContext] = Array.isArray(convertedArgs[loreContext])
+      ? convertedArgs[loreContext].map((item) => toLoreContext(item))
+      : toLoreContext(convertedArgs[loreContext]);
+  });
+  convertOptions.loreHash?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreHash) => {
+    convertedArgs[loreHash] = Array.isArray(convertedArgs[loreHash])
+      ? convertedArgs[loreHash].map((item) => toLoreHash(item))
+      : toLoreHash(convertedArgs[loreHash]);
+  });
+  convertOptions.lorePartition?.filter((key) => isValueDefined(convertedArgs, key)).forEach((lorePartition) => {
+    convertedArgs[lorePartition] = Array.isArray(convertedArgs[lorePartition])
+      ? convertedArgs[lorePartition].map((item) => toLorePartition(item))
+      : toLorePartition(convertedArgs[lorePartition]);
+  });
+  convertOptions.loreAddress?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreAddress) => {
+    convertedArgs[loreAddress] = {
+      hash: toLoreHash(convertedArgs[loreAddress].hash),
+      context: toLoreContext(convertedArgs[loreAddress].context),
+    };
+  });
+  convertOptions.loreBranchId?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreBranchId) => {
+    convertedArgs[loreBranchId] = Array.isArray(convertedArgs[loreBranchId])
+      ? convertedArgs[loreBranchId].map((item) => toLoreBranchId(item))
+      : toLoreBranchId(convertedArgs[loreBranchId]);
+  });
+  convertOptions.loreRepositoryId?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreRepositoryId) => {
+    convertedArgs[loreRepositoryId] = Array.isArray(convertedArgs[loreRepositoryId])
+      ? convertedArgs[loreRepositoryId].map((item) => toLoreRepositoryId(item))
+      : toLoreRepositoryId(convertedArgs[loreRepositoryId]);
+  });
+  convertOptions.loreInstanceId?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreInstanceId) => {
+    convertedArgs[loreInstanceId] = Array.isArray(convertedArgs[loreInstanceId])
+      ? convertedArgs[loreInstanceId].map((item) => toLoreInstanceId(item))
+      : toLoreInstanceId(convertedArgs[loreInstanceId]);
+  });
+  convertOptions.arrayTypes?.filter((arrayType) => isValueDefined(convertedArgs, arrayType.field)).forEach((arrayType) => {
+    const decodedArray = koffi.decode(convertedArgs[arrayType.field].ptr, arrayType.arrayDataType, convertedArgs[arrayType.field].count);
+    convertedArgs[arrayType.field] = decodedArray?.map((entry: any) => convertFromLoreDatatype({ ptr: entry }, arrayType.conversionTypes).ptr);
+  });
+  convertOptions.complexTypes?.filter((complexType) => isValueDefined(convertedArgs, complexType.field)).forEach((complexType) => {
+    convertedArgs[complexType.field] = convertFromLoreDatatype(convertedArgs[complexType.field], complexType.conversionTypes);
+  });
+  return convertedArgs;
+}
+
+{# Decodes given payload C memory pointer into a JS object. Uses the data type definition
+   defined in typeDefinition. Can be given an optional offset, if decoding a memory location
+   inside the C struct.
+#}
+const decodePayload = (payload: any, typeDefinition: koffi.TypeSpec, offset?: number) => {
+  if (offset) {
+    return koffi.decode(payload, offset, typeDefinition);
+  }
+  return koffi.decode(payload, typeDefinition);
+};
+
+const parseEventTag = (event: any): LoreEventTag => {
+  return decodePayload(event, "uint32_t", 0) as LoreEventTag;
+};
+
+const loreEventDataRawDataOffset = koffi.sizeof("uint64_t");
+
+const EVENT_DATA_POINTER = Symbol("lore.event_data_pointer");
+const EVENT_DATA = Symbol("lore.event_data");
+const EVENT_TYPE = Symbol("lore.event_type");
+
+{# Parses an LoreEvent into a JS object. #}
+const parseEvent = <T extends LoreEventTag>(
+  eventPtr: any,
+  userContext: number,
+  tag: T,
+  typeDefinition: koffi.TypeSpec,
+  eager?: boolean
+): LoreEventFFITyped<T> => {
+  try {
+    const loreEventFFI = {
+      tag,
+      userContext,
+      [EVENT_DATA_POINTER]: eventPtr,
+      [EVENT_DATA]: null as unknown,
+      [EVENT_TYPE]: typeDefinition,
+      {# Clone with the data copied to JS memory space. #}
+      clone(): LoreEventTagLoreEventMap[T] {
+        return toClonableLoreEvent({
+          userContext: this.userContext,
+          tag: this.tag,
+          tagName: LoreEventTagTagNameMap[this.tag],
+          data: (this as any).data,
+        } as LoreEvent<LoreContextBinary, LoreHashBinary, LoreBranchIdBinary, LoreRepositoryIdBinary, LoreInstanceIdBinary, LorePartitionBinary>) as LoreEventTagLoreEventMap[T];
+      }
+    };
+    {# Define a lazy-evaluated .data property #}
+    Object.defineProperty(loreEventFFI, "data", {
+      get() {
+        if (this[EVENT_DATA]) {
+          return this[EVENT_DATA] as LoreEventTagLoreEventMap[T];
+        }
+        if (this[EVENT_DATA_POINTER] === null) {
+          throw new Error("Event payload can be decoded only inside the event callback handler.");
+        }
+        let eventDecoded = convertFromLoreDatatype(
+          decodePayload(this[EVENT_DATA_POINTER], this[EVENT_TYPE], loreEventDataRawDataOffset),
+          loreEventTagLoreConversionTypesMap[this.tag as T],
+          eager
+        );
+        if (this.tag === LoreEventTag.METADATA) {
+          const metadataDecoded = parseMetadata(this[EVENT_DATA_POINTER], eventDecoded);
+          eventDecoded = {
+            ...eventDecoded,
+            value: {
+              ...eventDecoded.value,
+              ...metadataDecoded,
+            }
+          };
+        }
+        this[EVENT_DATA] = eventDecoded;
+        this[EVENT_DATA_POINTER] = null;
+        return eventDecoded as LoreEventTagLoreEventMap[T];
+      },
+      set() {
+        throw new Error("LoreEventFFI.data is read only");
+      }
+    });
+
+    return loreEventFFI as unknown as LoreEventFFITyped<T>;
+  } catch (e) {
+    console.error(e);
+    throw e;
+  }
+};
+
+{# Offset into the metadata payload inside the metadata event struct #}
+const loreMetadataRawDataOffset =
+  loreEventDataRawDataOffset +
+  koffi.offsetof(LoreMetadataEventDataStruct, "value") +
+  koffi.offsetof(LoreMetadataStruct, "data") +
+  koffi.sizeof("uint32_t");
+
+{# Parse metadata into a JS object #}
+const parseMetadata = (payload: any, decoded: any): LoreMetadata<LoreContextBinary, LoreHashBinary, LoreBranchIdBinary, LoreRepositoryIdBinary, LoreInstanceIdBinary, LorePartitionBinary> => {
+  const tag: LoreMetadataTag = decoded?.value?.tag;
+  switch(tag) {
+    case LoreMetadataTag.ADDRESS:
+      const addressRaw = decodePayload(
+          payload,
+          LoreAddressStruct,
+          loreMetadataRawDataOffset
+        ) as LoreAddressInternal;
+      return {
+        tag,
+        tagName: "address",
+        data: {
+          hash: toLoreHash(addressRaw.hash),
+          context: toLoreContext(addressRaw.context),
+        } as LoreAddress<LoreContextBinary, LoreHashBinary, LoreBranchIdBinary, LoreRepositoryIdBinary, LoreInstanceIdBinary, LorePartitionBinary>,
+      };
+    case LoreMetadataTag.BOOLEAN:
+      return {
+        tag,
+        tagName: "boolean",
+        data: !!decodePayload(
+          payload,
+          "uint8_t",
+          loreMetadataRawDataOffset
+        ) as LoreBoolean,
+      };
+    case LoreMetadataTag.BINARY:
+      return {
+        tag,
+        tagName: "binary",
+        data: decodePayload(
+          payload,
+          LoreBinaryStruct,
+          loreMetadataRawDataOffset
+        ) as LoreBinary,
+      };
+    case LoreMetadataTag.CONTEXT:
+      return {
+        tag,
+        tagName: "context",
+        data: toLoreContext(
+          decodePayload(
+            payload,
+            LoreContextStruct,
+            loreMetadataRawDataOffset
+          ) as LoreContextInternal
+        ),
+      };
+    case LoreMetadataTag.HASH:
+      return {
+        tag,
+        tagName: "hash",
+        data: toLoreHash(
+          decodePayload(
+            payload,
+            LoreHashStruct,
+            loreMetadataRawDataOffset
+          ) as LoreHashInternal
+        ),
+      };
+    case LoreMetadataTag.NUMERIC:
+      return {
+        tag,
+        tagName: "numeric",
+        data: decodePayload(
+          payload,
+          "uint64_t",
+          loreMetadataRawDataOffset
+        ) as number,
+      };
+    case LoreMetadataTag.STRING:
+      return {
+        tag,
+        tagName: "string",
+        data: fromLoreString(
+          decodePayload(
+            payload,
+            LoreStringStruct,
+            loreMetadataRawDataOffset
+          ) as { string: any; length: bigint | number }
+        ) as LoreString,
+      };
+    default:
+      throw new Error(`Unrecognized metadata type ${tag}`)
+  }
+};
+
+{# A map from LoreEventTag into the corresponding Koffi type definition for the event.
+
+    const loreEventTagDatatypeMap = {
+      [LoreEventTag.PROGRESS]: LoreProgressEventDataStruct,
+      [LoreEventTag.ERROR]: LoreErrorEventDataStruct,
+      [LoreEventTag.COMPLETE]: LoreCompleteEventDataStruct,
+      [LoreEventTag.METADATA]: LoreMetadataEventDataStruct,
+      // [...]
+    }
+
+#}
+const loreEventTagDatatypeMap = {
+  {% for enum_name, enum_values in symbols.enums.items() %}
+    {% if enum_name == 'lore_event_tag_t' %}
+      {% for value in enum_values %}
+        [LoreEventTag.{{value}}]: Lore{{pascal_case(value.lower())}}EventDataStruct,
+      {% endfor %}
+    {% endif %}
+  {% endfor %}
+};
+
+{# Helper function for converting a JS callback definition into the internal C callback.
+   The tag is parsed from the C callback data, and the user callback is called with a lazy
+   loadable event proxy, that is fully parsed only if accessing the event data.
+   If the function is a long running process that can emit events even after returning from
+   the immediate Lore call, registers a long running Koffi callback listener. The listener is
+   unregistered when finally receiving the END event. For non-long-running calls uses a simple
+   callback that lives only for the duration of the Lore call.
+#}
+const buildCallbackConfig = (
+  { userContext, callback, eager }: LoreEventCallbackConfig & { eager?: boolean },
+  registerCallback?: boolean,
+): LoreEventCallbackConfigInternal => {
+  let registeredCallback: koffi.IKoffiRegisteredCallback | null = null;
+  const callbackFn = (eventPtr: any, userContext: number) => {
+      let tag: LoreEventTag | undefined = undefined;
+      try {
+        tag = parseEventTag(eventPtr);
+        const event = parseEvent(
+          eventPtr,
+          userContext,
+          tag,
+          loreEventTagDatatypeMap[tag],
+          eager
+        );
+        
+        callback(event);
+        
+        {# Make the data pointers inaccessible after the callback. #}
+        (event as any)[EVENT_DATA_POINTER] = null;
+      } catch (e) {
+        console.error(e);
+        throw e;
+      } finally {
+        if (tag === LoreEventTag.END && registeredCallback) {
+          koffi.unregister(registeredCallback);
+        }
+      }
+    };
+  if (registerCallback) {
+    registeredCallback = koffi.register(callbackFn, koffi.pointer(LoreEventCallbackFunctionInternal));
+  }
+  return {
+    userContext,
+    callback: registeredCallback ? (registeredCallback as unknown as LoreEventCallbackConfigInternal["callback"]) : callbackFn,
+  };
+};
+
+{# JS <-> C conversion rules for LoreLogConfig. #}
+const loreLogConfigConversionOptions = {{
+  utils.generate_lore_conversion_types(symbols.types.items(), "lore_log_config_t", symbols.enums.items(), symbols)
+}};
+
+{# JS <-> C conversion rules for LoreGlobalArgs. #}
+const loreGlobalArgsConversionOptions = {{
+  utils.generate_lore_conversion_types(symbols.args.items(), "lore_global_args_t", symbols.enums.items(), symbols)
+}};
+
+{# An internal helper function for calling Lore C API. Converts the native JS input args into
+   the corresponding C API args before calling the API.
+#}
+const callLore = (
+  fn: koffi.KoffiFunction,
+  globalArgs: LoreGlobalArgs,
+  args: LoreArgs,
+  callbackConfig: LoreEventCallbackConfig,
+  convertOptions: IDatatypeConvertOptions,
+  registerCallback?: boolean,
+): Promise<LoreFnResponseCode> =>
+  new Promise<LoreFnResponseCode>((resolve, reject) => {
+    fn.async(
+      convertToLoreDatatype(globalArgs, loreGlobalArgsConversionOptions),
+      convertToLoreDatatype(args, convertOptions),
+      buildCallbackConfig(callbackConfig, registerCallback),
+      (err: unknown, res: LoreFnResponseCode) => {
+        if (err) {
+          reject(err);
+        }
+        resolve(res);
+      }
+    );
+  });
+
+{# Exports the externally visible public Lore API. Auto-generates the JS -> C conversion types for each
+   function at build time.
+
+   The functions are of the format:
+     branchCreate: (
+      globals: LoreGlobalArgs,
+      args: LoreBranchCreateArgs,
+      callback: LoreEventCallbackConfig
+    ): Promise<LoreFnResponseCode>;
+
+#}
+export const lore = {
+    {% for function_name, function_args in symbols.functions.items() %}
+        {% if function_name not in ignored_functions and "async" not in function_name %}
+            {% if function_name in symbols.functions_comments %}
+              /** {{ "\n".join(symbols.functions_comments[function_name]) }} */
+            {% endif %}
+            {{ camel_case(function_name.removeprefix("lore_")) }}: (
+              globals: LoreGlobalArgs,
+              args: {{ pascal_case(function_args.removesuffix("_t")) }},
+              callback: LoreEventCallbackConfig
+            ): Promise<LoreFnResponseCode> => callLore(
+              {{ function_name }},
+              globals,
+              args,
+              callback,
+              {{ utils.generate_lore_conversion_types(symbols.args.items(), function_args, symbols.enums.items(), symbols) }}
+              {% if function_name in registered_callback_functions %}
+                true,
+              {% endif %}
+            ),
+        {% endif %}
+    {% endfor %}
+    logConfigure: (config: LoreLogConfig) => loreLogConfigure(
+      convertToLoreDatatype(config, loreLogConfigConversionOptions),
+    ),
+    shutdown: () => loreShutdown(),
+    version: () => loreVersion(),
+};

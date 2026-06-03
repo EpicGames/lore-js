@@ -1,0 +1,137 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+{% import "utils.ji" as utils %}
+
+{{ utils.enum_imports(symbols, "./enums/index.js") }}
+
+{# Export helper types #}
+export type LoreFnResponseCode = number;
+export type LoreBoolean = boolean;
+
+{# Export types that have a custom mapping between Lore C types and JS types #}
+export type LoreString = string;
+
+export interface LoreHashInternal {
+  data: Uint8Array;
+}
+export interface LoreHashBinary extends LoreHashInternal {
+  toString: () => string;
+};
+
+export interface LoreContextInternal {
+  data: Uint8Array;
+}
+export interface LoreContextBinary extends LoreContextInternal {
+  toString: () => string;
+};
+
+export interface LorePartitionInternal {
+  data: Uint8Array;
+}
+export interface LorePartitionBinary extends LorePartitionInternal {
+  toString: () => string;
+};
+
+export interface LoreInstanceIdInternal {
+  data: Uint8Array;
+}
+export interface LoreInstanceIdBinary extends LoreInstanceIdInternal {
+  toString: () => string;
+};
+
+{# Type aliases for binary hash types #}
+export type LoreBranchIdInternal = LoreContextInternal;
+export type LoreBranchIdBinary = LoreContextBinary;
+export type LoreRepositoryIdInternal = LorePartitionInternal;
+export type LoreRepositoryIdBinary = LorePartitionBinary;
+
+export interface LoreAddressInternal {
+  hash: LoreHashInternal;
+  context: LoreContextInternal;
+}
+export interface LoreAddress<LoreContext = string, LoreHash = string, LoreBranchId = string, LoreRepositoryId = string, LoreInstanceId = string, LorePartition = string> {
+  hash: LoreHash;
+  context: LoreContext;
+}
+
+{#
+
+Export Lore shared type Typescript interfaces and the corresponding Koffi struct definitions.
+
+For instance, for the `struct lore_config_t`
+
+    typedef struct lore_config_t {
+      struct lore_string_t correlation_id;
+      uintptr_t file_count_limit;
+      uintptr_t file_size_limit;
+    } lore_config_t;
+
+the result is:
+
+    export interface LoreConfig<LoreContext = string, LoreHash = string, LoreBranchId = string, LoreRepositoryId = string, LoreInstanceId = string, LorePartition = string> {
+      correlationId?: LoreString;
+      fileCountLimit?: number;
+      fileSizeLimit?: number;
+    }
+
+#}
+{% for struct_type, struct_fields in symbols.types.items() %}
+    {% if struct_type not in custom_types %}
+      {% if struct_type in array_type_map %}
+        {# Auto-generated `_array_t` alias. Element/FFI info lives in generator/registry.py. #}
+        {% set arr = array_type_map[struct_type] %}
+        export type {{ arr.js_class }}<LoreContext = string, LoreHash = string, LoreBranchId = string, LoreRepositoryId = string, LoreInstanceId = string, LorePartition = string> =
+          {% if arr.ptr_field_comments %}
+            /** {{ "\n".join(arr.ptr_field_comments) }} */
+          {% endif %}
+          {{ arr.js_inner_type }}[];
+      {% else %}
+        export interface {{ pascal_case(struct_type.removesuffix("_t")) }}<LoreContext = string, LoreHash = string, LoreBranchId = string, LoreRepositoryId = string, LoreInstanceId = string, LorePartition = string> {
+          {% for field in struct_fields %}
+              {% if cToJsTypeMap[field.0] %}
+                  {% if field.0 == "uint8_t" and field.1 == "data"%}
+                    {% set field_js_type = "number" %}
+                {% else %}
+                    {% set field_js_type = cToJsTypeMap[field.0] %}
+                {% endif %}
+              {% elif field.0.endswith("_array_t") %}
+                  {% set field_js_type = pascal_case(field.0.removesuffix("_t")) + "<LoreContext, LoreHash, LoreBranchId, LoreRepositoryId, LoreInstanceId, LorePartition>" %}
+              {% elif field.0.endswith("_t") %}
+                  {% set field_js_type = pascal_case(field.0.removesuffix("_t")) %}
+              {% else %}
+                  {% set field_js_type = field.0 %}
+              {% endif %}
+              {% if struct_type.endswith("_config_t") %}
+                  {% set field_js_optional = "?" %}
+              {% else %}
+                  {% set field_js_optional = "" %}
+              {% endif %}
+              {% if field.3 %}
+                /** {{ "\n".join(field.3) }} */
+              {% endif %}
+              {% if field.2 != 0 %}
+                  {{camel_case(field.1)}}{{field_js_optional}}: [{{ ([field_js_type] * (field.2 | int)) | join(", ") }}];
+              {% else %}
+                  {{camel_case(field.1)}}{{field_js_optional}}: {{ field_js_type }};
+              {% endif %}
+          {% endfor %}
+        }
+      {% endif %}
+    {% endif %}
+{% endfor %}
+
+{# Export more types that have a custom mapping between Lore C types and JS types #}
+
+export type LoreBytes<LoreContext = string, LoreHash = string, LoreBranchId = string, LoreRepositoryId = string, LoreInstanceId = string, LorePartition = string> = Uint8Array;
+
+export type LoreBinary<LoreContext = string, LoreHash = string, LoreBranchId = string, LoreRepositoryId = string, LoreInstanceId = string, LorePartition = string> = Uint8Array;
+
+{# Export Lore metadata union Typescript type #}
+export type LoreMetadata<LoreContext = string, LoreHash = string, LoreBranchId = string, LoreRepositoryId = string, LoreInstanceId = string, LorePartition = string> =
+  { tag: LoreMetadataTag.ADDRESS, tagName: "address", data: LoreAddress<LoreContext, LoreHash, LoreBranchId, LoreRepositoryId, LoreInstanceId, LorePartition> } |
+  { tag: LoreMetadataTag.BOOLEAN, tagName: "boolean", data: LoreBoolean } |
+  { tag: LoreMetadataTag.BINARY, tagName: "binary", data: LoreBinary } |
+  { tag: LoreMetadataTag.CONTEXT, tagName: "context", data: LoreContext } |
+  { tag: LoreMetadataTag.HASH, tagName: "hash", data: LoreHash } |
+  { tag: LoreMetadataTag.NUMERIC, tagName: "numeric", data: number } |
+  { tag: LoreMetadataTag.STRING, tagName: "string", data: LoreString };

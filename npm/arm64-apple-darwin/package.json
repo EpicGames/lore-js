@@ -1,0 +1,25 @@
+{
+  "name": "@lore-vcs/sdk-arm64-apple-darwin",
+  "version": "0.0.1-dev",
+  "type": "module",
+  "main": "./index.cjs",
+  "module": "./index.js",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "lorelib-arm64-apple-darwin.dylib",
+    "index.js",
+    "index.cjs"
+  ],
+  "exports": {
+    ".": {
+      "import": "./index.js",
+      "require": "./index.cjs"
+    },
+    "./lore": "./lorelib-arm64-apple-darwin.dylib"
+  }
+}

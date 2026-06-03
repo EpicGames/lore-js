@@ -1,0 +1,296 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+{# Constants (ignored_functions, registered_callback_functions, custom_types,
+   native_types, cToJsTypeMap) live in generator/registry.py and are exposed
+   as Jinja globals via build_augmented. #}
+
+{# A macro for generating conversion type definitions. Used by generate_lore_conversion_types() #}
+{% macro generate_conversion_type(conversion_type_name, fields_array, field_name) %}
+  {% set ns = namespace(has_match = false) %}
+  {% for field in fields_array %}
+    {% if field.0.strip() == field_name.strip() %}
+      {% set ns.has_match = true %}
+    {% endif %}
+  {% endfor %}
+  {% if ns.has_match %}
+  {{ conversion_type_name }}: [
+    {% for field in fields_array %}
+        {% if field.0.strip() == field_name.strip() %}
+          "{{camel_case(field.1)}}",
+        {% endif %}
+    {% endfor %}
+  ],
+  {% endif %}
+{% endmacro %}
+
+{# A macro for generating IDatatypeConvertOptions structures for given struct_name.
+   The Python-side AST definition for the type needs to be found in type_collection.
+   The macro calls itself recursively to generate conversion configuration for deep structures
+   that refer to other Lore structs.
+
+   E.g. converts:
+   typedef struct lore_revision_diff_file_event_data_t {
+      struct lore_string_t path;
+      enum lore_file_action_t action;
+      uint8_t old_is_file;
+      uint8_t new_is_file;
+   } lore_revision_diff_file_event_data_t;
+   to:
+   {
+     loreBoolean: ["oldIsFile", "newIsFile"],
+     loreString: ["path"],
+     enums: [
+       {
+         name: "LoreFileAction",
+         type: LoreFileAction,
+         fields: ["action"],
+       },
+     ],
+   }
+#}
+{% macro generate_lore_conversion_types(type_collection, struct_name, enums_collection, symbols) %}
+  {
+    {% set ns = namespace(struct_fields = []) %}
+    {% for struct_type, struct_fields in type_collection %}
+        {% if struct_type == struct_name %}
+            {% set ns.struct_fields = [] %}
+            {% for field in struct_fields %}
+                {% set ns.struct_fields = ns.struct_fields + [(field.0.removesuffix("*"), field.1)] %}
+            {% endfor %}
+        {% endif %}
+    {% endfor %}
+    {% set all_types_collection = ((symbols.events.items() | list) + (symbols.types.items() | list) + (symbols.args.items() | list)) %}
+    {% set all_types = all_types_collection | map(attribute=0) | list %}
+    {{ generate_conversion_type("loreBoolean", ns.struct_fields, "uint8_t") }}
+    {{ generate_conversion_type("loreString", ns.struct_fields, "lore_string_t") }}
+    {{ generate_conversion_type("loreContext", ns.struct_fields, "lore_context_t") }}
+    {{ generate_conversion_type("loreHash", ns.struct_fields, "lore_hash_t") }}
+    {{ generate_conversion_type("lorePartition", ns.struct_fields, "lore_partition_t") }}
+    {{ generate_conversion_type("loreAddress", ns.struct_fields, "lore_address_t") }}
+    {{ generate_conversion_type("loreBranchId", ns.struct_fields, "lore_branch_id_t") }}
+    {{ generate_conversion_type("loreRepositoryId", ns.struct_fields, "lore_repository_id_t") }}
+    {{ generate_conversion_type("loreInstanceId", ns.struct_fields, "loree_instance_id_t") }}
+    {{ generate_conversion_type("loreBytes", ns.struct_fields, "lore_bytes_t") }}
+    {{ generate_conversion_type("loreBinary", ns.struct_fields, "lore_binary_t") }}
+    {% set enum_ns = namespace(has_enums = false) %}
+    {% for enum_name, enum_values in enums_collection %}
+      {% set enum_fields = generate_conversion_type("fields", ns.struct_fields, enum_name) %}
+      {% if '"' in enum_fields %}
+        {% set enum_ns.has_enums = true %}
+      {% endif %}
+    {% endfor %}
+    {% if enum_ns.has_enums %}
+    enums: [
+      {% for enum_name, enum_values in enums_collection %}
+        {% set enum_fields = generate_conversion_type("fields", ns.struct_fields, enum_name) %}
+        {% if '"' in enum_fields %} {# only print enum mappings that contain at least one string field #}
+          {
+            name: "{{pascal_case(enum_name.removesuffix("_t"))}}",
+            type: {{pascal_case(enum_name.removesuffix("_t"))}},
+            {{ enum_fields }}
+          },
+        {% endif%}
+      {% endfor %}
+    ],
+    {% endif %}
+    {% set array_ns = namespace(has_array_types = false) %}
+    {% for field in ns.struct_fields %}
+      {% if field.0 in array_type_map %}
+        {% set array_ns.has_array_types = true %}
+      {% endif %}
+    {% endfor %}
+    {% if array_ns.has_array_types %}
+    arrayTypes: [
+      {% for field in ns.struct_fields %}
+        {% if field.0 in array_type_map %}
+          {
+            field: "{{camel_case(field.1)}}",
+            arrayDataType: "{{ array_type_map[field.0].array_data_type }}",
+            conversionTypes: {{ generate_lore_conversion_types(all_types_collection, field.0, enums_collection, symbols) }}
+          },
+        {% endif %}
+      {% endfor %}
+    ],
+    {% endif %}
+    {% set complex_ns = namespace(has_complex_types = false) %}
+    {% for field in ns.struct_fields %}
+      {% if field.0 in all_types and not field.0 in custom_types and not field.0.endswith("_array_t") %}
+        {% set complex_ns.has_complex_types = true %}
+      {% endif %}
+    {% endfor %}
+    {% if complex_ns.has_complex_types %}
+    complexTypes: [
+      {% for field in ns.struct_fields %}
+          {% if field.0 in all_types and not field.0 in custom_types and not field.0.endswith("_array_t") %}
+            {
+              field: "{{camel_case(field.1)}}",
+              conversionTypes: {{ generate_lore_conversion_types(all_types_collection, field.0, enums_collection, symbols) }}
+            },
+          {% endif %}
+      {% endfor %}
+    ],
+    {% endif %}
+  },
+{% endmacro %}
+
+{# A macro that outputs enum imports. #}
+{% macro enum_imports(symbols, from_path) %}
+  import {
+    {% for enum_name, enum_values in symbols.enums.items() %}
+      {{pascal_case(enum_name.removesuffix("_t"))}}, 
+    {% endfor %}
+  } from "{{ from_path }}";
+{% endmacro %}
+
+{# A macro that outputs enum-ffi imports. #}
+{% macro enum_ffi_imports(symbols, from_path) %}
+  import {
+    {% for enum_name, enum_values in symbols.enums.items() %}
+      {{pascal_case(enum_name.removesuffix("_t"))}}Def,
+    {% endfor %}
+    loadEnumsFFI,
+  } from "{{ from_path }}";
+  loadEnumsFFI();
+{% endmacro %}
+
+{# A macro that outputs types imports.
+   Auto-iterates non-custom types (which use their natural pascal_case names),
+   then explicitly imports the hand-written types from types.ji. #}
+{% macro types_imports(symbols, from_path) %}
+  import {
+    {% for struct_type, struct_fields in symbols.types.items() %}
+      {% if struct_type not in custom_types %}
+        {{ pascal_case(struct_type.removesuffix("_t")) }},
+      {% endif %}
+    {% endfor %}
+    LoreString,
+    LoreBytes,
+    LoreBinary,
+    LoreContextBinary,
+    LoreContextInternal,
+    LoreHashBinary,
+    LoreHashInternal,
+    LorePartitionBinary,
+    LorePartitionInternal,
+    LoreAddress,
+    LoreAddressInternal,
+    LoreBranchIdBinary,
+    LoreBranchIdInternal,
+    LoreRepositoryIdBinary,
+    LoreRepositoryIdInternal,
+    LoreInstanceIdBinary,
+    LoreInstanceIdInternal,
+    LoreMetadata,
+    LoreBoolean,
+    LoreFnResponseCode
+  } from "{{ from_path }}";
+{% endmacro %}
+
+{# A macro that outputs types-ffi imports. #}
+{% macro types_ffi_imports(symbols, from_path) %}
+  import {
+    {% for struct_type, struct_fields in symbols.types.items() %}
+      {% if struct_type not in custom_types %}
+        {{ pascal_case(struct_type.removesuffix("_t")) }}Struct,
+      {% endif %}
+    {% endfor %}
+    LoreStringStruct,
+    LoreBytesStruct,
+    LoreBinaryStruct,
+    LoreContextStruct,
+    LoreHashStruct,
+    LoreAddressStruct,
+    LoreMetadataUnion,
+    LoreMetadataStruct,
+    loadTypesFFI,
+  } from "{{ from_path }}";
+  loadTypesFFI();
+{% endmacro %}
+
+{# A macro that outputs events imports. #}
+{% macro events_imports(symbols, from_path) %}
+  import {
+    {% for struct_type, struct_fields in symbols.events.items() %}
+      {{ pascal_case(struct_type.removesuffix("_t")) }},
+    {% endfor %}
+    {% for enum_name, enum_values in symbols.enums.items() %}
+      {% if enum_name == 'lore_event_tag_t' %}
+        {% for value in enum_values %}
+          Lore{{pascal_case(value.lower())}}Event,
+        {% endfor %}
+      {% endif %}
+    {% endfor %}
+    LoreEvent,
+    LoreEventFFI,
+    LoreEventFFITyped,
+    LoreEventTagLoreEventMap,
+    LoreEventTagTagNameMap,
+    TagNameLoreEventTagMap,
+    LoreEventCallbackFunction,
+    LoreEventCallbackConfig,
+    parseLoreEventJSON,
+    loreEventTagLoreConversionTypesMap,
+    IEnumConvertOption,
+    IDatatypeConvertOptions,
+    toClonableLoreEvent,
+    STRING_POINTERS,
+    STRING_CACHE,
+  } from "{{ from_path }}";
+{% endmacro %}
+
+{# A macro that outputs events-ffi imports. #}
+{% macro events_ffi_imports(symbols, from_path) %}
+  import {
+    {% for struct_type, struct_fields in symbols.events.items() %}
+      {{ pascal_case(struct_type.removesuffix("_t")) }}Struct,
+    {% endfor %}
+    loadEventsFFI,
+  } from "{{ from_path }}";
+  loadEventsFFI();
+{% endmacro %}
+
+{# A macro that outputs args imports. #}
+{% macro args_imports(symbols, from_path) %}
+  import {
+    {% for struct_type, struct_fields in symbols.args.items() %}
+      {{ pascal_case(struct_type.removesuffix("_t")) }},
+    {% endfor %}
+    LoreArgs
+  } from "{{ from_path }}";
+{% endmacro %}
+
+{# A macro that outputs args-ffi imports. #}
+{% macro args_ffi_imports(symbols, from_path) %}
+  import {
+    {% for struct_type, struct_fields in symbols.args.items() %}
+      {{ pascal_case(struct_type.removesuffix("_t")) }}Struct,
+    {% endfor %}
+    loadArgsFFI,
+  } from "{{ from_path }}";
+  loadArgsFFI();
+{% endmacro %}
+
+{# A macro that outputs functions imports. #}
+{% macro functions_imports(symbols, from_path) %}
+  import {
+    LoreEventCallbackConfigInternal,
+  } from "{{ from_path }}";
+{% endmacro %}
+
+{# A macro that outputs functions-ffi imports. #}
+{% macro functions_ffi_imports(symbols, from_path) %}
+  import {
+    {% for function_name, function_args in symbols.functions.items() %}
+      {% if function_name not in ignored_functions and "async" not in function_name %}
+        {{ function_name }},
+      {% endif %}
+    {% endfor %}
+    loreLogConfigure,
+    loreShutdown,
+    loreVersion,
+    LoreEventCallbackFunctionInternal,
+    LoreEventCallbackConfigInternalStruct,
+    loadFunctionsFFI,
+  } from "{{ from_path }}";
+  loadFunctionsFFI();
+{% endmacro %}

@@ -1,0 +1,53 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+{% import "utils.ji" as utils %}
+
+import koffi from "koffi";
+
+{{ utils.enum_imports(symbols, "../enums/index.js") }}
+{{ utils.enum_ffi_imports(symbols, "../enums/ffi.js") }}
+{{ utils.types_imports(symbols, "../index.js") }}
+{{ utils.types_ffi_imports(symbols, "../ffi.js") }}
+
+{#
+
+Export event Typescript interfaces and the corresponding Koffi struct definitions.
+
+For instance, for the the struct `lore_auth_url_event_data_t`
+    typedef struct lore_auth_url_event_data_t {
+        // Authentication URL
+        struct lore_string_t url;
+    } lore_auth_url_event_data_t;
+
+The result is:
+
+    export const LoreAuthUrlEventDataStruct = koffi.struct("LoreAuthUrlEventData", {
+      url: "LoreString",
+    });
+
+#}
+{% for struct_type, struct_fields in symbols.events.items() %}
+    export const {{ pascal_case(struct_type.removesuffix("_t")) }}Struct = koffi.struct(
+        "{{ pascal_case(struct_type.removesuffix("_t")) }}",
+        {
+            {% for field in struct_fields %}
+                {% if field.0 in native_types %}
+                    {% set field_type = field.0 %}
+                {% elif field.0.endswith("_t") %}
+                    {% set field_type = pascal_case(field.0.removesuffix("_t")) %}
+                {% elif field.0.endswith("_t*") %}
+                    {% set field_type = pascal_case(field.0.removesuffix("_t*")) + "*" %}
+                {% else %}
+                    {% set field_type = field.0 %}
+                {% endif %}
+                {% if field.2 != 0 %}
+                    {{camel_case(field.1)}}: "{{ field_type }}[{{field.2}}]",
+                {% else %}
+                    {{camel_case(field.1)}}: "{{ field_type }}",
+                {% endif %}
+            {% endfor %}
+        }
+    );
+{% endfor %}
+
+export const loadEventsFFI = () => {};

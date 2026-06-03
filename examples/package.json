@@ -1,0 +1,13 @@
+{
+  "name": "examples",
+  "type": "module",
+  "dependencies": {
+    "@lore-vcs/sdk": "workspace:*"
+  },
+  "scripts": {
+    "example:esm": "node esm/example.ts",
+    "example:esm:native": "node esm/example-native.ts",
+    "example:cjs": "node cjs/example.cjs",
+    "example:cjs:native": "node cjs/example-native.cjs"
+  }
+}
