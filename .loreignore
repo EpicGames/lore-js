@@ -1,0 +1,10 @@
+.venv
+node_modules
+*.dylib
+*.so
+*.dll
+**/__pycache__/
+lore
+lore_js
+dist
+examples/LoreRepositories
