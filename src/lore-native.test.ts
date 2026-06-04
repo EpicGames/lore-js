@@ -1534,7 +1534,7 @@ describe("lore-js-sdk", () => {
       async () => {
         await stageRandomFile();
 
-        const calls = 100;
+        const calls = 200;
         const promises: Promise<LoreFnResponseCode>[] = [];
         const events: LoreRepositoryStatusFileEvent[] = [];
 
