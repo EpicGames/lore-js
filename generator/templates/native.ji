@@ -18,32 +18,27 @@ import koffi from "koffi";
 {# Helper functions for generating Lore types from JS types: #}
 const toLoreString = (str: string, allocations: any[]) => {
   {# LoreString.string is declared as uint8_t* (see types-ffi.ji) so Koffi does not
-     auto-decode it as a NUL-terminated C string; we pass a pointer plus a matching
-     length to keep the read bounded.
+     auto-decode it as a NUL-terminated C string. Pass raw UTF-8 bytes here so the
+     pointer type matches; the matching length keeps the read bounded.
 
-     The native calls run via fn.async on a libuv worker thread, so the memory
-     behind this pointer must stay valid and stable for the whole (asynchronous)
-     call. A JS Buffer is NOT safe here: Koffi only guarantees Buffer-backed
-     pointers for the duration of a *synchronous* call, and small Buffers are
-     slices of Node's shared internal pool — across an async boundary the bytes
-     can be reused/overwritten, corrupting the input string under concurrency.
+     The native calls run via fn.async on a libuv worker thread, which reads the
+     bytes behind this pointer for the whole duration of the (asynchronous) call.
+     Koffi passes the Buffer's backing memory by pointer without copying it, so that
+     memory MUST stay alive until the call finishes. If the Buffer becomes
+     unreachable mid-call, V8 can collect it (and small Buffers are slices of Node's
+     shared pool, whose region is then free to be reused) — the native side then
+     reads freed/overwritten bytes, corrupting the input string under concurrency.
 
-     Instead allocate dedicated, non-moving native memory with koffi.alloc and
-     copy the UTF-8 bytes into it. This memory is NOT garbage collected — Koffi
-     wraps it in a non-owning handle (see CallAlloc/WrapPointer in Koffi) — so it
-     must be released with koffi.free once the call is done. The pointer is
-     pushed into the `allocations` collector so the caller can free it after the
-     native call has finished reading it (see callLore / logConfigure). #}
+     Node Buffer backing stores are off-heap and are not relocated by GC, so keeping
+     the Buffer reachable is sufficient to keep the pointer valid. We push it into
+     the `allocations` collector; the caller holds that collector as a GC root until
+     the terminal END event (see callLore), guaranteeing the bytes outlive the call.
+     This collector is load-bearing — do not drop it early. #}
   const bytes = Buffer.from(str, "utf-8");
-  const length = bytes.byteLength;
-  const ptr = koffi.alloc("uint8_t", length > 0 ? length : 1);
-  allocations.push(ptr);
-  if (length > 0) {
-    koffi.encode(ptr, "uint8_t", bytes, length);
-  }
+  allocations.push(bytes);
   return {
-    string: ptr,
-    length,
+    string: bytes,
+    length: bytes.byteLength,
   };
 };
 
@@ -124,10 +119,10 @@ const toLoreInstanceId = (instanceId: LoreInstanceIdInternal): LoreInstanceIdBin
    corresponding Lore array structs that have a count field and a data pointer.
 #}
 const isValueDefined = (data: Record<string, unknown>, key: string) => data[key] != null;
-{# `allocations` collects every koffi.alloc pointer created while converting input
-   strings (recursively, including array/complex sub-types) so the caller can
-   koffi.free them once the native call no longer needs the inputs. It is required
-   so that any caller that forgets to provide a collector fails to type-check. #}
+{# `allocations` collects every input string Buffer created while converting the args
+   (recursively, including array/complex sub-types) so the caller can hold them as a
+   GC root for the duration of the native call — see toLoreString / callLore. It is
+   required so that any caller that forgets to provide a collector fails to type-check. #}
 const convertToLoreDatatype = (args: any, convertOptions: IDatatypeConvertOptions, allocations: any[]): any => {
   const convertedArgs = {...args};
   convertOptions.loreBoolean?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreBoolean) => {
@@ -466,9 +461,9 @@ const loreEventTagDatatypeMap = {
 
    `onEnd` is invoked once the terminal END event is received (for both registered and
    non-registered callbacks). This is the latest point at which native code can still be
-   reading the input args, so it is the correct place to free the input allocations — see
-   callLore. It runs after koffi.unregister so the persistent listener (if any) is torn down
-   first. #}
+   reading the input args, so it is where callLore releases the GC root keeping the input
+   Buffers alive. It runs after koffi.unregister so the persistent listener (if any) is
+   torn down first. #}
 const buildCallbackConfig = (
   { userContext, callback, eager }: LoreEventCallbackConfig & { eager?: boolean },
   registerCallback?: boolean,
@@ -534,40 +529,44 @@ const callLore = (
   registerCallback?: boolean,
 ): Promise<LoreFnResponseCode> =>
   new Promise<LoreFnResponseCode>((resolve, reject) => {
-    {# Input strings are converted into dedicated koffi.alloc'd native memory (see
-       toLoreString). That memory is NOT garbage collected, so every allocation is
-       collected here and must be explicitly freed once the native call is done
-       reading the inputs. fn.async runs on a libuv worker thread and, for
-       long-running (registered) calls, returns before all events are delivered —
-       so the only point guaranteed to be after the last input read is the terminal
-       END event. We free there (via buildCallbackConfig's onEnd), and fall back to
-       freeing on the error path in case the call fails before END is emitted. The
-       `freed` guard makes freeAllocations idempotent so the two paths can't double
-       free. #}
+    {# Input strings are passed to the native call as JS Buffers (see toLoreString),
+       gathered into `allocations`. fn.async runs the call on a libuv worker thread that
+       reads those Buffers for the call's whole duration, so we must keep them reachable
+       as a GC root until the native side is done with them — otherwise they can be
+       collected mid-call and the input strings corrupt under concurrency.
+
+       The terminal END event is the latest point native code can still read the inputs
+       (for long-running registered calls fn.async returns before END is delivered), so
+       releaseAllocations runs from buildCallbackConfig's onEnd. The fn.async completion
+       callback also releases as a fallback in case the call fails before any END event.
+       `released` makes the release idempotent. No koffi.free is needed — these are JS
+       Buffers, not koffi.alloc'd memory. #}
     const allocations: any[] = [];
-    let freed = false;
-    const freeAllocations = () => {
-      if (freed) {
+    let released = false;
+    const releaseAllocations = () => {
+      if (released) {
         return;
       }
-      freed = true;
-      for (const ptr of allocations) {
-        koffi.free(ptr);
-      }
+      released = true;
+      {# Drop the GC root so the Buffers become collectable now the call is done. #}
+      allocations.length = 0;
     };
 
     const convertedGlobalArgs = convertToLoreDatatype(globalArgs, loreGlobalArgsConversionOptions, allocations);
     const convertedArgs = convertToLoreDatatype(args, convertOptions, allocations);
-    const internalCallbackConfig = buildCallbackConfig(callbackConfig, registerCallback, freeAllocations);
+    const internalCallbackConfig = buildCallbackConfig(callbackConfig, registerCallback, releaseAllocations);
     fn.async(
       convertedGlobalArgs,
       convertedArgs,
       internalCallbackConfig,
       (err: unknown, res: LoreFnResponseCode) => {
+        {# Fallback release once the call has fully returned, in case END was never
+           delivered (e.g. a hard failure before any events). The void references keep
+           the Buffers reachable up to this point for non-long-running calls. #}
+        void convertedGlobalArgs;
+        void convertedArgs;
+        releaseAllocations();
         if (err) {
-          {# END may never be delivered on a hard failure; free the inputs here so
-             they are not leaked. The guard prevents a double free if END did fire. #}
-          freeAllocations();
           reject(err);
           return;
         }
@@ -610,18 +609,12 @@ export const lore = {
         {% endif %}
     {% endfor %}
     logConfigure: (config: LoreLogConfig) => {
-      {# Synchronous call: the native function reads the inputs before returning, so
-         the koffi.alloc'd strings can be freed as soon as the call completes. #}
+      {# Synchronous call: the input Buffers are reachable via the converted args for
+         the whole (synchronous) native call, so no extra lifetime handling is needed. #}
       const allocations: any[] = [];
-      try {
-        return loreLogConfigure(
-          convertToLoreDatatype(config, loreLogConfigConversionOptions, allocations),
-        );
-      } finally {
-        for (const ptr of allocations) {
-          koffi.free(ptr);
-        }
-      }
+      return loreLogConfigure(
+        convertToLoreDatatype(config, loreLogConfigConversionOptions, allocations),
+      );
     },
     shutdown: () => loreShutdown(),
     version: () => loreVersion(),

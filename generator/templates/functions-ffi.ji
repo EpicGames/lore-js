@@ -90,7 +90,7 @@ const defaultLibPath = () => {
 
 {# Configure max simultaneous FFI calls, default is 64 #}
 koffi.config({
-  max_async_calls: 256,
+  max_async_calls: 1024,
   async_stack_size: 2 * 1024 * 1024,
 } as KoffiConfig)
 
