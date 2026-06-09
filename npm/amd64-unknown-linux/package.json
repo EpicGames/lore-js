@@ -16,7 +16,9 @@
   "files": [
     "lorelib-amd64-unknown-linux.so",
     "index.js",
-    "index.cjs"
+    "index.cjs",
+    "*Licenses.txt",
+    "*.THIRD-PARTY-NOTICES.txt"
   ],
   "exports": {
     ".": {

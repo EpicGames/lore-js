@@ -16,7 +16,9 @@
   "files": [
     "lorelib-arm64-graviton-linux.so",
     "index.js",
-    "index.cjs"
+    "index.cjs",
+    "*Licenses.txt",
+    "*.THIRD-PARTY-NOTICES.txt"
   ],
   "exports": {
     ".": {
