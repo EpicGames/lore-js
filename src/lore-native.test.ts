@@ -1901,22 +1901,16 @@ describe("lore-js-sdk", () => {
       expect(patch).toContain("+Line 3 end");
     });
 
-    test("Latin-1 encoded file diff should contain encoded content", async () => {
+    test("Latin-1 encoded file diff is reported as binary", async () => {
+      // lore only supports UTF-8 and UTF-16 (with BOM) diffs; any other
+      // encoding is treated as binary and the patch just notes the difference.
       const { patch } = await diffEncodingFile("encoding-latin1.txt");
-      expect(patch).toContain("+Line 1 ASCII");
-      // Row 2 contains the only non-UTF-8-compatible bytes in this encoding
-      // (0xE9 for é, 0xEF for ï as single bytes), decoded to U+FFFD.
-      expect(patch).toContain("+Caf\uFFFD CHANGED na\uFFFDve");
-      expect(patch).toContain("+Line 3 end");
+      expect(patch).toContain("Binary files differ");
     });
 
-    test("CP1252 encoded file diff should contain encoded content", async () => {
+    test("CP1252 encoded file diff is reported as binary", async () => {
       const { patch } = await diffEncodingFile("encoding-cp1252.txt");
-      expect(patch).toContain("+Line 1 ASCII");
-      // Row 2 contains the only non-UTF-8-compatible bytes in this encoding
-      // (0xE9 for é, 0xEF for ï as single bytes), decoded to U+FFFD.
-      expect(patch).toContain("+Caf\uFFFD CHANGED na\uFFFDve");
-      expect(patch).toContain("+Line 3 end");
+      expect(patch).toContain("Binary files differ");
     });
 
     test("UTF-16LE (with BOM) encoded file diff should contain encoded content", async () => {
@@ -1937,16 +1931,14 @@ describe("lore-js-sdk", () => {
       expect(patch).toContain("+Line 3 end");
     });
 
-    test("UTF-16LE (bomless) encoded file diff should contain encoded content", async () => {
+    test("UTF-16LE (bomless) encoded file diff is reported as binary", async () => {
       const { patch } = await diffEncodingFile("encoding-bomless-utf16le.txt");
-      expect(patch).toContain("L\x00i\x00n\x00e\x00");
-      expect(patch).toContain("e\x00n\x00d\x00");
+      expect(patch).toContain("Binary files differ");
     });
 
-    test("UTF-16BE (bomless) encoded file diff should contain encoded content", async () => {
+    test("UTF-16BE (bomless) encoded file diff is reported as binary", async () => {
       const { patch } = await diffEncodingFile("encoding-bomless-utf16be.txt");
-      expect(patch).toContain("\x00L\x00i\x00n\x00e");
-      expect(patch).toContain("\x00e\x00n\x00d");
+      expect(patch).toContain("Binary files differ");
     });
   });
 
