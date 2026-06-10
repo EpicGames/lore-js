@@ -1,4 +1,11 @@
-# Lore JavaScript / TypeScript SDK - Quick Start
+# Lore JavaScript SDK
+
+## About
+This repository contains tools to exend Lore with JavaScript and TypeScript. 
+
+Lore is an open source version control system that is designed for unprecedented scalability of both data and teams. It is optimized for projects that combine code with large binary assets, including games and entertainment, and caters for the needs of developers and artists alike. 
+
+For full Lore documentation, architecture details, and contribution guidelines, visit the [main Lore repository](https://github.com/EpicGames/lore).
 
 ## Install
 
@@ -60,9 +67,9 @@ await lore
 
 For comprehensive examples, see [examples/esm/example.ts](examples/esm/example.ts) (fluent) and [examples/esm/example-native.ts](examples/esm/example-native.ts) (low-level).
 
-# Contributing
+## Contributing
 
-## Set up your dev environment
+### Set up your dev environment
 
 1. Clone the Lore JS SDK repository:
 
@@ -89,11 +96,11 @@ uv pip install jinja2 pycparser
 pnpm install --frozen-lockfile
 ```
 
-## Get the Lore library
+### Get the Lore library
 
 The SDK binds against the Lore C library. Pick one of the two options below depending on whether you're also modifying the Lore core.
 
-### Option A — build the library from Lore source
+#### Option A — build the library from Lore source
 
 Use this when you're changing the Lore C/Rust core alongside the JS SDK.
 
@@ -103,13 +110,13 @@ Use this when you're changing the Lore C/Rust core alongside the JS SDK.
 cargo build --release
 ```
 
-### Option B — fetch a pre-built Lore library
+#### Option B — fetch a pre-built Lore library
 
 Use this when you only need to develop the JS SDK against an existing Lore version.
 
 1. Download the header and binaries from [Lore's repository](https://github.com/EpicGames/lore) release page.
 
-## Generate the JS bindings
+### Generate the JS bindings
 
 1. Point `LORE_BUILD_PATH` at the library directory from the previous section:
 
@@ -127,7 +134,7 @@ pnpm run build
 
 3. Any edits you now make under `lore_js/` are picked up by re-running `pnpm run build`. If you change anything under `generator/templates/` or pull a new Lore pre-built binary, re-run step 2 to regenerate the bindings.
 
-## Run the examples
+### Run the examples
 
 With the dev environment set up, a Lore library available, and the JS bindings generated, run an example from the repository root:
 
@@ -138,17 +145,17 @@ pnpm --filter examples run example:esm:native
 
 See [examples/README.md](examples/README.md) for the full list (ESM and CommonJS, fluent and native).
 
-## Run the test suite
+### Run the test suite
 
 ```bash
 pnpm test
 ```
 
-# Releasing
+## Releasing
 
 Assumes the dev environment from [Contributing](#contributing) is set up, that is, the Lore library has been built or fetched and JS bindings regenerated against the version you're releasing.
 
-## Bump the version
+### Bump the version
 
 ```bash
 # To sync the NPM version with the env variable LORE_VERSION:
@@ -157,7 +164,7 @@ pnpm run version:update
 pnpm run version:update:to 0.0.1-custom-test
 ```
 
-## Publish to npm
+### Publish to npm
 
 1. Log in to npm with an account that has publish rights on the `@lore-vcs` scope:
 
