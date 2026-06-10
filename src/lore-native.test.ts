@@ -290,7 +290,7 @@ describe("lore-js-sdk", () => {
   });
 
   test(
-    "branchCreate, branchSwitch, branchList, branchDiff and branchDelete should work",
+    "branchCreate, branchSwitch, branchList, branchDiff and branchArchive should work",
     { timeout: 15000 },
     async () => {
       await stageRandomFile();
@@ -420,7 +420,7 @@ describe("lore-js-sdk", () => {
       expect(switchWithBranchIdRes).toBe(0);
       expect(switchedBranchName).toBe("main");
 
-      const deleteRes = await lore.branchDelete(
+      const archiveRes = await lore.branchArchive(
         globalArgs,
         {
           branch: testBranchName,
@@ -430,8 +430,8 @@ describe("lore-js-sdk", () => {
           callback: gatherLogs,
         }
       );
-      printLogsIfLoreCallFailed(deleteRes);
-      expect(deleteRes).toBe(0);
+      printLogsIfLoreCallFailed(archiveRes);
+      expect(archiveRes).toBe(0);
 
       const switchRes2 = await lore.branchSwitch(
         globalArgs,
@@ -445,7 +445,7 @@ describe("lore-js-sdk", () => {
       );
       expect(
         switchRes2,
-        "branch switch should fail after branch deletion"
+        "branch switch should fail after branch archival"
       ).toBe(1);
     }
   );
