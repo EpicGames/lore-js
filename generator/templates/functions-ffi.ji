@@ -146,6 +146,10 @@ export const loreLogConfigure = lib.func("lore_log_configure", "int32_t", [
 
 export const loreShutdown = lib.func("lore_shutdown", "int32_t", []);
 
+export const loreSetThreadLimit = lib.func("lore_set_thread_limit", "int32_t", [
+  "uintptr_t",
+]);
+
 export const loreVersion = lib.func("lore_version", "char*", []);
 
 export const loadFunctionsFFI = () => {};

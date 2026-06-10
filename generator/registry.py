@@ -39,6 +39,7 @@ IGNORED_FUNCTIONS = [
     "lore_event_type",
     "lore_shutdown",
     "lore_set_allocator",
+    "lore_set_thread_limit",
     "lore_version",
     "lore_user_directory",
     "lore_log_configure",

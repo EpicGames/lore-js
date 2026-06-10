@@ -287,6 +287,7 @@
     {% endfor %}
     loreLogConfigure,
     loreShutdown,
+    loreSetThreadLimit,
     loreVersion,
     LoreEventCallbackFunctionInternal,
     LoreEventCallbackConfigInternalStruct,

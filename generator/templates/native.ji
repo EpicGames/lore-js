@@ -617,5 +617,6 @@ export const lore = {
       );
     },
     shutdown: () => loreShutdown(),
+    setThreadLimit: (count: number) => loreSetThreadLimit(count),
     version: () => loreVersion(),
 };

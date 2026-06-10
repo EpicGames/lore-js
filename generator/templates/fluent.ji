@@ -355,6 +355,7 @@ export const lore = {
     }
     return returnCode;
   },
+  setThreadLimit: (count: number) => loreInternal.setThreadLimit(count),
   version: () => loreInternal.version(),
   globalCallback: <T extends LoreEventTag>(event: T, callback: (event: LoreEventFFITyped<T>) => void) => {
     if (!lore[STATE].eventSubcriptions[event]) {
