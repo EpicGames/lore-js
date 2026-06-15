@@ -1,9 +1,10 @@
 # Lore JavaScript SDK
 
 ## About
-This repository contains tools to exend Lore with JavaScript and TypeScript. 
 
-Lore is an open source version control system that is designed for unprecedented scalability of both data and teams. It is optimized for projects that combine code with large binary assets, including games and entertainment, and caters for the needs of developers and artists alike. 
+This repository contains the JavaScript/TypeScript SDK for integrating with Lore.
+
+Lore is an open source version control system that is designed for unprecedented scalability of both data and teams. It is optimized for projects that combine code with large binary assets, including games and entertainment, and caters to the needs of developers and artists alike.
 
 For full Lore documentation, architecture details, and contribution guidelines, visit the [main Lore repository](https://github.com/EpicGames/lore).
 
@@ -13,20 +14,6 @@ For full Lore documentation, architecture details, and contribution guidelines, 
 
 ```bash
 npm install @lore-vcs/sdk
-```
-
-### Nightly Build
-
-Nightly builds are published to npm under the `nightly` dist-tag. To install the latest nightly:
-
-```bash
-npm install @lore-vcs/sdk@nightly
-```
-
-To install a specific nightly, browse the [release history](https://www.npmjs.com/package/@lore-vcs/sdk?activeTab=versions) and pin the exact version:
-
-```bash
-npm install @lore-vcs/sdk@0.6.0-nightly.1
 ```
 
 ## Minimal example
@@ -114,7 +101,7 @@ cargo build --release
 
 Use this when you only need to develop the JS SDK against an existing Lore version.
 
-1. Download the header and binaries from [Lore's repository](https://github.com/EpicGames/lore) release page.
+1. Download the header and binaries from the [Lore repository](https://github.com/EpicGames/lore) release page.
 
 ### Generate the JS bindings
 
@@ -149,31 +136,4 @@ See [examples/README.md](examples/README.md) for the full list (ESM and CommonJS
 
 ```bash
 pnpm test
-```
-
-## Releasing
-
-Assumes the dev environment from [Contributing](#contributing) is set up, that is, the Lore library has been built or fetched and JS bindings regenerated against the version you're releasing.
-
-### Bump the version
-
-```bash
-# To sync the NPM version with the env variable LORE_VERSION:
-pnpm run version:update
-# To set a custom version:
-pnpm run version:update:to 0.0.1-custom-test
-```
-
-### Publish to npm
-
-1. Log in to npm with an account that has publish rights on the `@lore-vcs` scope:
-
-```bash
-npm login
-```
-
-2. Publish:
-
-```bash
-npm publish
 ```
