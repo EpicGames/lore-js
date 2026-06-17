@@ -1,6 +1,16 @@
 {
   "name": "@lore-vcs/sdk-arm64-apple-darwin",
   "version": "0.0.1-dev",
+  "license": "MIT",
+  "author": "Epic Games, Inc.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EpicGames/lore-js.git"
+  },
+  "homepage": "https://github.com/EpicGames/lore-js#readme",
+  "bugs": {
+    "url": "https://github.com/EpicGames/lore-js/issues"
+  },
   "type": "module",
   "main": "./index.cjs",
   "module": "./index.js",
