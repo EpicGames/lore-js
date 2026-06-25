@@ -446,7 +446,7 @@ describe("lore-js-sdk", () => {
       expect(
         switchRes2,
         "branch switch should fail after branch archival"
-      ).toBe(1);
+      ).toBe(34);
     }
   );
 

@@ -239,7 +239,12 @@ const convertFromLoreDatatype = (args: any, convertOptions: IDatatypeConvertOpti
       : toLoreInstanceId(convertedArgs[loreInstanceId]);
   });
   convertOptions.arrayTypes?.filter((arrayType) => isValueDefined(convertedArgs, arrayType.field)).forEach((arrayType) => {
-    const decodedArray = koffi.decode(convertedArgs[arrayType.field].ptr, arrayType.arrayDataType, convertedArgs[arrayType.field].count);
+    const field = convertedArgs[arrayType.field];
+    if (!field || field.ptr == null || !field.count) {
+      convertedArgs[arrayType.field] = [];
+      return;
+    }
+    const decodedArray = koffi.decode(field.ptr, arrayType.arrayDataType, field.count);
     convertedArgs[arrayType.field] = decodedArray?.map((entry: any) => convertFromLoreDatatype({ ptr: entry }, arrayType.conversionTypes).ptr);
   });
   convertOptions.complexTypes?.filter((complexType) => isValueDefined(convertedArgs, complexType.field)).forEach((complexType) => {

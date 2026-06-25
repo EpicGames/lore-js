@@ -33,6 +33,7 @@ interface LoreFluentState {
   started: boolean;
   fn?: LoreFunction;
   errors: LoreErrorEvent[];
+  completeError?: LoreEvent;
   eventSubcriptions: EventSubscriptions;
 }
 
@@ -46,6 +47,7 @@ const cloneState = (state: LoreFluentState): LoreFluentState => {
     filter: [...state.filter],
     started: state.started,
     errors: [...state.errors],
+    completeError: state.completeError,
     eventSubcriptions: state.eventSubcriptions,
   };
 };
@@ -57,10 +59,26 @@ interface IAsyncIteratorQueueResolveData {
 
 {# Error class for thrown Lore errors. #}
 export class LoreError extends Error {
-  constructor(public loreErrors?: LoreErrorEvent[], public events?: LoreEvent[]) {
-    super(loreErrors?.map((error) => error.data.errorInner).join("\n") ?? "Error when calling Lore");
+  constructor(public loreErrors?: LoreErrorEvent[], public events?: LoreEvent[], completeError?: LoreEvent) {
+    const errorMessages = loreErrors?.map((error) => error.data.errorInner).filter(Boolean) ?? [];
+    const completeMessage = (completeError?.data as any)?.error?.message;
+    const parts = errorMessages.length ? errorMessages : (completeMessage ? [completeMessage] : []);
+    super(parts.length ? parts.join("\n") : "Error when calling Lore");
   }
 }
+
+{# Records terminal error info from events: ERROR events into errors[], and
+   failed COMPLETE events (non-zero status) into completeError, so the error
+   message can be surfaced even when no ERROR event is emitted. #}
+const recordTerminalEvent = (state: LoreFluentState, event: LoreEventFFI) => {
+  if (event.tag === LoreEventTag.ERROR) {
+    state.errors.push(event.clone());
+  } else if (event.tag === LoreEventTag.COMPLETE) {
+    if (event.data.status !== 0) {
+      state.completeError = event.clone();
+    }
+  }
+};
 
 const handleEventSubscriptions = (
   event: LoreEventFFI,
@@ -115,9 +133,7 @@ const createLoreExecutor = (_state: LoreFluentState, args: LoreArgs, fn: LoreFun
         throw new Error("Already started");
       }
       loreExecutor[STATE].callbackConfig.callback = (event: LoreEventFFI) => {
-        if (event.tag === LoreEventTag.ERROR) {
-          loreExecutor[STATE].errors.push(event.clone());
-        }
+        recordTerminalEvent(loreExecutor[STATE], event);
         handleEventSubscriptions(event, loreExecutor[STATE].eventSubcriptions);
         if (loreExecutor[STATE].filter.length > 0) {
           if (loreExecutor[STATE].filter.includes(event.tag)) {
@@ -144,7 +160,7 @@ const createLoreExecutor = (_state: LoreFluentState, args: LoreArgs, fn: LoreFun
       }
       loreExecutor[STATE].started = true;
       if (!loreExecutor[STATE].callbackConfig.callback) {
-        loreExecutor[STATE].callbackConfig.callback = () => {};
+        loreExecutor[STATE].callbackConfig.callback = (event: LoreEventFFI) => recordTerminalEvent(loreExecutor[STATE], event);
       }
       if (!loreExecutor[STATE].fn) {
         throw new Error("Lore function not set");
@@ -155,7 +171,7 @@ const createLoreExecutor = (_state: LoreFluentState, args: LoreArgs, fn: LoreFun
         loreExecutor[STATE].callbackConfig as LoreEventCallbackConfig
       );
       if (returnCode !== 0) {
-        throw new LoreError(loreExecutor[STATE].errors);
+        throw new LoreError(loreExecutor[STATE].errors, undefined, loreExecutor[STATE].completeError);
       }
       return returnCode;
     },
@@ -170,9 +186,7 @@ const createLoreExecutor = (_state: LoreFluentState, args: LoreArgs, fn: LoreFun
       }
       const events: LoreEvent[] = [];
       loreExecutor[STATE].callbackConfig.callback = (event: LoreEventFFI) => {
-        if (event.tag === LoreEventTag.ERROR) {
-          loreExecutor[STATE].errors.push(event.clone());
-        }
+        recordTerminalEvent(loreExecutor[STATE], event);
         handleEventSubscriptions(event, loreExecutor[STATE].eventSubcriptions);
         if (loreExecutor[STATE].filter.length > 0) {
           if (loreExecutor[STATE].filter.includes(event.tag)) {
@@ -193,7 +207,7 @@ const createLoreExecutor = (_state: LoreFluentState, args: LoreArgs, fn: LoreFun
         loreExecutor[STATE].callbackConfig as LoreEventCallbackConfig
       );
       if (returnCode !== 0) {
-        throw new LoreError(loreExecutor[STATE].errors, events);
+        throw new LoreError(loreExecutor[STATE].errors, events, loreExecutor[STATE].completeError);
       }
       return events;
     },
@@ -240,9 +254,7 @@ const createLoreExecutor = (_state: LoreFluentState, args: LoreArgs, fn: LoreFun
         When getting the END event, marks the execution as done.
       #}
       loreExecutor[STATE].callbackConfig.callback = (event) => {
-        if (event.tag === LoreEventTag.ERROR) {
-          loreExecutor[STATE].errors.push(event.clone());
-        }
+        recordTerminalEvent(loreExecutor[STATE], event);
         handleEventSubscriptions(event, loreExecutor[STATE].eventSubcriptions);
         if (loreExecutor[STATE].filter.length > 0) {
           if (loreExecutor[STATE].filter.includes(event.tag)) {
@@ -296,7 +308,7 @@ const createLoreExecutor = (_state: LoreFluentState, args: LoreArgs, fn: LoreFun
         const returnCode = await lorePromise;
         {# Throw an error, if the Lore call failed. #}
         if (returnCode !== 0) {
-          throw new LoreError(loreExecutor[STATE].errors);
+          throw new LoreError(loreExecutor[STATE].errors, undefined, loreExecutor[STATE].completeError);
         }
       }
     },
