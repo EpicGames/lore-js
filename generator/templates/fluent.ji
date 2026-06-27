@@ -168,9 +168,16 @@ const createLoreExecutor = (_state: LoreFluentState, args: LoreArgs, fn: LoreFun
         throw new Error("Already started");
       }
       loreExecutor[STATE].started = true;
-      if (!loreExecutor[STATE].callbackConfig.callback) {
-        loreExecutor[STATE].callbackConfig.callback = (event: LoreEventFFI) => recordTerminalEvent(loreExecutor[STATE], event);
-      }
+      {# Always wrap so terminal (ERROR/COMPLETE) events get recorded even when
+         the user supplied their own callback; otherwise a nonzero return code
+         would throw a LoreError with no captured error context. #}
+      const userCallback = loreExecutor[STATE].callbackConfig.callback;
+      loreExecutor[STATE].callbackConfig.callback = (event: LoreEventFFI) => {
+        recordTerminalEvent(loreExecutor[STATE], event);
+        if (userCallback) {
+          userCallback(event);
+        }
+      };
       if (!loreExecutor[STATE].fn) {
         throw new Error("Lore function not set");
       }
