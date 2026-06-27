@@ -27,7 +27,7 @@ type EventSubscriptions = Partial<Record<LoreEventTag, Set<LoreEventCallbackFunc
 interface LoreFluentState {
   globalArgs: LoreGlobalArgs;
   args: LoreArgs;
-  callbackConfig: Partial<LoreEventCallbackConfig & { eager?: boolean }>;
+  callbackConfig: Partial<LoreEventCallbackConfig>;
   userContext?: number;
   filter: LoreEventTag[];
   started: boolean;
@@ -101,6 +101,7 @@ export interface LoreFluentApi {
     [STATE]: LoreFluentState;
     filterByType: (...args: LoreEventTag[]) => LoreFluentApi;
     userContext: (userContext: number) => LoreFluentApi;
+    stringDecodeMode: (stringDecodeMode: LoreJSStringDecodeMode) => LoreFluentApi;
     callback: (cb: LoreEventCallbackFunction) => LoreFluentApi;
     waitAsync: () => Promise<LoreFnResponseCode>;
     collectAsync: () => Promise<LoreEvent[]>;
@@ -153,6 +154,14 @@ const createLoreExecutor = (_state: LoreFluentState, args: LoreArgs, fn: LoreFun
       loreExecutor[STATE].callbackConfig.userContext = userContext;
       return loreExecutor;
     },
+    {# Set string decode mode #}
+    stringDecodeMode: (stringDecodeMode: LoreJSStringDecodeMode) => {
+      if (loreExecutor[STATE].started) {
+        throw new Error("Already started");
+      }
+      loreExecutor[STATE].callbackConfig.stringDecodeMode = stringDecodeMode;
+      return loreExecutor;
+    },
     {# Start execution in waitAsync mode. #}
     waitAsync: async () => {
       if (loreExecutor[STATE].started) {
@@ -196,8 +205,8 @@ const createLoreExecutor = (_state: LoreFluentState, args: LoreArgs, fn: LoreFun
           events.push(event.clone());
         }
       };
-      {# eager FFI decoding since we know we are going to clone immediately #}
-      loreExecutor[STATE].callbackConfig.eager = true;
+      {# eager FFI string decoding since we know we are going to clone immediately #}
+      loreExecutor[STATE].callbackConfig.stringDecodeMode = LoreJSStringDecodeMode.DEFAULT;
       if (!loreExecutor[STATE].fn) {
         throw new Error("Lore function not set");
       }
@@ -271,8 +280,8 @@ const createLoreExecutor = (_state: LoreFluentState, args: LoreArgs, fn: LoreFun
           }
         }
       };
-      {# eager FFI decoding since we know we are going to clone immediately #}
-      loreExecutor[STATE].callbackConfig.eager = true;
+      {# eager FFI string decoding since we know we are going to clone immediately #}
+      loreExecutor[STATE].callbackConfig.stringDecodeMode = LoreJSStringDecodeMode.DEFAULT;
       if (!loreExecutor[STATE].fn) {
         throw new Error("Lore function not set");
       }

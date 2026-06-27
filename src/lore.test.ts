@@ -17,6 +17,8 @@ import { LoreEventTag, LoreLogLevel } from "@lore-vcs/sdk/types/enums";
 import {
   isEventType,
   LoreEvent,
+  LoreEventFFITyped,
+  LoreJSStringDecodeMode,
   LoreRevisionCommitRevisionEvent,
   LoreRevisionHistoryEntryEvent,
 } from "@lore-vcs/sdk/types/events";
@@ -121,6 +123,35 @@ describe("lore-js-sdk-fluent", () => {
     expect(events.length).toBeGreaterThan(0);
     expect(events[0].data.revisionNumber).toBe(1);
     expect(revisionNumber).toBe(1);
+  });
+
+  test("stringDecodeMode(LAZY) should make string values inaccessible outside the callback", async () => {
+    await stageRandomFile();
+    await commit();
+
+    const statusEvents: LoreEventFFITyped<LoreEventTag.REPOSITORY_STATUS_REVISION>[] =
+      [];
+    await lore
+      .repositoryStatus(globalArgs, { scan: true })
+      .filterByType(LoreEventTag.REPOSITORY_STATUS_REVISION)
+      .stringDecodeMode(LoreJSStringDecodeMode.LAZY)
+      .callback((event) => {
+        if (event.tag === LoreEventTag.REPOSITORY_STATUS_REVISION) {
+          // Touch the event payload but NOT the lazily decoded branchName
+          // string. The backing FFI string pointer is only valid for the
+          // duration of the callback, so the string is never realized in JS
+          // land.
+          void event.data;
+          statusEvents.push(event);
+        }
+      })
+      .waitAsync();
+
+    // With LAZY decoding the FFI string pointer is freed once the callback
+    // returns, so branchName can no longer be decoded to "main" outside it.
+    // (With the DEFAULT eager mode this would read back as "main".)
+    expect(statusEvents.length).toBeGreaterThan(0);
+    expect(statusEvents[0]?.data.branchName).not.toBe("main");
   });
 
   test("callback with filter should work", async () => {

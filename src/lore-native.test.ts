@@ -49,6 +49,7 @@ import {
   LoreSharedStoreCreateEvent,
   LoreSharedStoreInfoEvent,
   LoreRepositoryCreateEvent,
+  LoreJSStringDecodeMode,
 } from "@lore-vcs/sdk/types/events";
 import {
   LoreAddress,
@@ -1098,7 +1099,7 @@ describe("lore-js-sdk", () => {
       expect(repoStatusEvents[0]?.data.branchName).toBe("main");
     });
 
-    test("should fail outside the callback handler, if the data was not accessed in the callback", async () => {
+    test("should fail outside the callback handler, if lazy loaded data was not accessed in the callback", async () => {
       await stageRandomFile();
       const repoStatusEvents: LoreEventFFITyped<LoreEventTag.REPOSITORY_STATUS_REVISION>[] =
         [];
@@ -1118,6 +1119,7 @@ describe("lore-js-sdk", () => {
             }
             gatherLogs(event);
           },
+          stringDecodeMode: LoreJSStringDecodeMode.LAZY,
         }
       );
       printLogsIfLoreCallFailed(statusRes);

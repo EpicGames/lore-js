@@ -6,19 +6,27 @@
  * Run `pnpm build` first to refresh dist/, then `pnpm test:perf`.
  *
  * Measures the cost of consuming LORE_EVENT_REPOSITORY_STATE_DUMP_NODE events
- * across four SDK access patterns:
- *   1. raw native callback (@lore-vcs/sdk/native)
- *   2. fluent callback + waitAsync
- *   3. fluent asyncIter
- *   4. fluent collectAsync
- * Two variants per mode:
+ * across the SDK access patterns:
+ *   1. raw native callback, eager string decode (@lore-vcs/sdk/native)
+ *   2. raw native callback, lazy string decode
+ *   3. fluent callback + waitAsync, eager string decode
+ *   4. fluent callback + waitAsync, lazy string decode
+ *   5. fluent asyncIter, always eager string decode
+ *   6. fluent collectAsync, always eager string decode
+ * The lazy variants exercise stringDecodeMode = LAZY (FFI strings decoded only
+ * on access); the eager variants use the DEFAULT mode (all strings decoded up
+ * front). stringDecodeMode only affects the native and fluent-callback paths —
+ * asyncIter and collectAsync clone every event and therefore always decode
+ * eagerly. Two variants per mode:
  *   A. accumulate event.data.size only
  *   B. accumulate name.length, typeData.length, and every numeric field to trigger
  *      also string parsing for the events
+ * Variant A never touches a string, so the lazy modes should win there; variant
+ * B reads every string, so eager should win once most strings are accessed.
  *
  * Each (mode, variant) pair runs in its OWN child process so peak RSS can be
  * attributed cleanly per access pattern. Within one child: warmup + N_RUNS
- * measured rounds. The parent orchestrates 4 modes × 2 variants = 8 children
+ * measured rounds. The parent orchestrates 6 modes × 2 variants = 12 children
  * sequentially. The shared setup (create repo + stage 100k files + commit) is
  * done once in the parent; children re-open the existing repo via globalArgs.
  *
@@ -51,6 +59,7 @@ import { lore as loreNative } from "@lore-vcs/sdk/native";
 import { LoreEventTag } from "@lore-vcs/sdk/types/enums";
 import type { LoreGlobalArgs } from "@lore-vcs/sdk/types/args";
 import type { LoreEventFFI, LoreEvent } from "@lore-vcs/sdk/types/events";
+import { LoreJSStringDecodeMode } from "@lore-vcs/sdk/types/events";
 
 const __filename = fileURLToPath(import.meta.url);
 
@@ -71,14 +80,21 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const NODE_TAG = LoreEventTag.REPOSITORY_STATE_DUMP_NODE;
 
+// The `-lazy` modes run their access pattern with stringDecodeMode = LAZY; the
+// rest use the DEFAULT (eager) mode. Only native and fluent-callback expose the
+// setting, so only those gain a lazy counterpart.
 type Mode =
   | "native"
+  | "native-lazy"
   | "fluent-callback"
+  | "fluent-callback-lazy"
   | "fluent-asyncIter"
   | "fluent-collectAsync";
 const MODES: Mode[] = [
   "native",
+  "native-lazy",
   "fluent-callback",
+  "fluent-callback-lazy",
   "fluent-asyncIter",
   "fluent-collectAsync",
 ];
@@ -228,7 +244,8 @@ function passFromState(state: Accumulator["state"], ms: number): Pass {
 
 async function runNative(
   globalArgs: LoreGlobalArgs,
-  variant: Variant
+  variant: Variant,
+  stringDecodeMode: LoreJSStringDecodeMode
 ): Promise<Pass> {
   const acc = makeAccumulator();
   const consume = variant === "A" ? acc.consumeA : acc.consumeB;
@@ -242,6 +259,7 @@ async function runNative(
           consume(event.data);
         }
       },
+      stringDecodeMode,
     }
   );
   const ms = performance.now() - t0;
@@ -251,7 +269,8 @@ async function runNative(
 
 async function runFluentCallback(
   globalArgs: LoreGlobalArgs,
-  variant: Variant
+  variant: Variant,
+  stringDecodeMode: LoreJSStringDecodeMode
 ): Promise<Pass> {
   const acc = makeAccumulator();
   const consume = variant === "A" ? acc.consumeA : acc.consumeB;
@@ -259,6 +278,7 @@ async function runFluentCallback(
   await loreFluent
     .repositoryDump(globalArgs, {})
     .filterByType(NODE_TAG)
+    .stringDecodeMode(stringDecodeMode)
     .callback((event) => {
       if (event.tag === NODE_TAG) {
         consume(event.data);
@@ -315,9 +335,21 @@ async function runMode(
 ): Promise<Pass> {
   switch (mode) {
     case "native":
-      return runNative(globalArgs, variant);
+      return runNative(globalArgs, variant, LoreJSStringDecodeMode.DEFAULT);
+    case "native-lazy":
+      return runNative(globalArgs, variant, LoreJSStringDecodeMode.LAZY);
     case "fluent-callback":
-      return runFluentCallback(globalArgs, variant);
+      return runFluentCallback(
+        globalArgs,
+        variant,
+        LoreJSStringDecodeMode.DEFAULT
+      );
+    case "fluent-callback-lazy":
+      return runFluentCallback(
+        globalArgs,
+        variant,
+        LoreJSStringDecodeMode.LAZY
+      );
     case "fluent-asyncIter":
       return runFluentAsyncIter(globalArgs, variant);
     case "fluent-collectAsync":
@@ -481,7 +513,9 @@ async function spawnChild(
     child.on("error", reject);
     child.on("close", (code) => {
       if (code !== 0) {
-        reject(new Error(`child for ${mode}/${variant} exited with code ${code}`));
+        reject(
+          new Error(`child for ${mode}/${variant} exited with code ${code}`)
+        );
         return;
       }
       try {
@@ -535,7 +569,7 @@ async function setupParent(): Promise<{
 
   const tStage = performance.now();
   await loreFluent
-    .fileStage(globalArgs, { paths: [repositoryPath] })
+    .fileStage(globalArgs, { paths: [repositoryPath], scan: true })
     .waitAsync();
   logParent(`setup: fileStage done (${fmtMs(performance.now() - tStage)})`);
 
@@ -543,11 +577,15 @@ async function setupParent(): Promise<{
   await loreFluent
     .revisionCommit(globalArgs, { message: "perf setup" })
     .waitAsync();
-  logParent(`setup: revisionCommit done (${fmtMs(performance.now() - tCommit)})`);
+  logParent(
+    `setup: revisionCommit done (${fmtMs(performance.now() - tCommit)})`
+  );
 
   const tFlush = performance.now();
   await loreFluent.repositoryFlush(globalArgs, {}).waitAsync();
-  logParent(`setup: repositoryFlush done (${fmtMs(performance.now() - tFlush)})`);
+  logParent(
+    `setup: repositoryFlush done (${fmtMs(performance.now() - tFlush)})`
+  );
 
   return { globalArgs, repositoryPath };
 }

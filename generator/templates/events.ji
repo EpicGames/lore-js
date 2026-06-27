@@ -168,12 +168,20 @@ export type LoreEventFFI = { userContext: number } & (
 
 export type LoreEventFFITyped<T extends LoreEventTag> = Extract<LoreEventFFI, { tag: T }>;
 
+export enum LoreJSStringDecodeMode {
+  /** Decode all the event FFI strings into JS strings on initial event access. This is more performant, if you are cloning the whole event, or accessing most of the strings. */
+  DEFAULT = 0,
+  /**  Lazy decode the individual FFI strings into JS strings when accessing the string. This is more performant, if you you are not going to clone the whole event and not going to access most of the strings. */
+  LAZY = 1,
+};
+
 {# External JS callback function definition, different from the raw C callback. #}
 export declare type LoreEventCallbackFunction = (event: LoreEventFFI) => void;
 
 export declare interface LoreEventCallbackConfig {
   userContext?: number;
   callback: LoreEventCallbackFunction;
+  stringDecodeMode?: LoreJSStringDecodeMode;
 }
 
 {#

@@ -167,9 +167,9 @@ const convertToLoreDatatype = (args: any, convertOptions: IDatatypeConvertOption
    native JS datatypes. E.g. uint8_t booleans are mapped to false/true, LoreStrings to strings, and
    the array types with a data pointer and count are decoded to native JS arrays.
 #}
-const convertFromLoreDatatype = (args: any, convertOptions: IDatatypeConvertOptions, eager?: boolean): any => {
+const convertFromLoreDatatype = (args: any, convertOptions: IDatatypeConvertOptions, stringDecodeMode: LoreJSStringDecodeMode = LoreJSStringDecodeMode.DEFAULT): any => {
   const convertedArgs = {...args};
-  if (!eager && convertOptions.loreString?.length) {
+  if (stringDecodeMode === LoreJSStringDecodeMode.LAZY && convertOptions.loreString?.length) {
     convertedArgs[STRING_POINTERS] = {}; 
     convertedArgs[STRING_CACHE] = {}; 
   }
@@ -177,7 +177,7 @@ const convertFromLoreDatatype = (args: any, convertOptions: IDatatypeConvertOpti
     convertedArgs[loreBoolean] = !!convertedArgs[loreBoolean];
   });
   convertOptions.loreString?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreString) => {
-    if (eager) {
+    if (stringDecodeMode === LoreJSStringDecodeMode.DEFAULT) {
       convertedArgs[loreString] = fromLoreString(convertedArgs[loreString]);
     } else {
       {# Save the original FFI string pointer for later use #}
@@ -245,10 +245,10 @@ const convertFromLoreDatatype = (args: any, convertOptions: IDatatypeConvertOpti
       return;
     }
     const decodedArray = koffi.decode(field.ptr, arrayType.arrayDataType, field.count);
-    convertedArgs[arrayType.field] = decodedArray?.map((entry: any) => convertFromLoreDatatype({ ptr: entry }, arrayType.conversionTypes).ptr);
+    convertedArgs[arrayType.field] = decodedArray?.map((entry: any) => convertFromLoreDatatype({ ptr: entry }, arrayType.conversionTypes, stringDecodeMode).ptr);
   });
   convertOptions.complexTypes?.filter((complexType) => isValueDefined(convertedArgs, complexType.field)).forEach((complexType) => {
-    convertedArgs[complexType.field] = convertFromLoreDatatype(convertedArgs[complexType.field], complexType.conversionTypes);
+    convertedArgs[complexType.field] = convertFromLoreDatatype(convertedArgs[complexType.field], complexType.conversionTypes, stringDecodeMode);
   });
   return convertedArgs;
 }
@@ -280,7 +280,7 @@ const parseEvent = <T extends LoreEventTag>(
   userContext: number,
   tag: T,
   typeDefinition: koffi.TypeSpec,
-  eager?: boolean
+  stringDecodeMode: LoreJSStringDecodeMode = LoreJSStringDecodeMode.DEFAULT,
 ): LoreEventFFITyped<T> => {
   try {
     const loreEventFFI = {
@@ -311,7 +311,7 @@ const parseEvent = <T extends LoreEventTag>(
         let eventDecoded = convertFromLoreDatatype(
           decodePayload(this[EVENT_DATA_POINTER], this[EVENT_TYPE], loreEventDataRawDataOffset),
           loreEventTagLoreConversionTypesMap[this.tag as T],
-          eager
+          stringDecodeMode
         );
         if (this.tag === LoreEventTag.METADATA) {
           const metadataDecoded = parseMetadata(this[EVENT_DATA_POINTER], eventDecoded);
@@ -470,7 +470,7 @@ const loreEventTagDatatypeMap = {
    Buffers alive. It runs after koffi.unregister so the persistent listener (if any) is
    torn down first. #}
 const buildCallbackConfig = (
-  { userContext, callback, eager }: LoreEventCallbackConfig & { eager?: boolean },
+  { userContext, callback, stringDecodeMode }: LoreEventCallbackConfig,
   registerCallback?: boolean,
   onEnd?: () => void,
 ): LoreEventCallbackConfigInternal => {
@@ -484,7 +484,7 @@ const buildCallbackConfig = (
           userContext,
           tag,
           loreEventTagDatatypeMap[tag],
-          eager
+          stringDecodeMode
         );
 
         callback(event);
