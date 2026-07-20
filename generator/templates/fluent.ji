@@ -59,7 +59,7 @@ interface IAsyncIteratorQueueResolveData {
 
 {# Error class for thrown Lore errors. #}
 export class LoreError extends Error {
-  constructor(public loreErrors?: LoreErrorEvent[], public events?: LoreEvent[], completeError?: LoreEvent) {
+  constructor(public returnCode: number, public loreErrors?: LoreErrorEvent[], public events?: LoreEvent[], completeError?: LoreEvent) {
     const errorMessages = loreErrors?.map((error) => error.data.errorInner).filter(Boolean) ?? [];
     const completeMessage = (completeError?.data as any)?.error?.message;
     const parts = errorMessages.length ? errorMessages : (completeMessage ? [completeMessage] : []);
@@ -187,7 +187,7 @@ const createLoreExecutor = (_state: LoreFluentState, args: LoreArgs, fn: LoreFun
         loreExecutor[STATE].callbackConfig as LoreEventCallbackConfig
       );
       if (returnCode !== 0) {
-        throw new LoreError(loreExecutor[STATE].errors, undefined, loreExecutor[STATE].completeError);
+        throw new LoreError(returnCode, loreExecutor[STATE].errors, undefined, loreExecutor[STATE].completeError);
       }
       return returnCode;
     },
@@ -223,7 +223,7 @@ const createLoreExecutor = (_state: LoreFluentState, args: LoreArgs, fn: LoreFun
         loreExecutor[STATE].callbackConfig as LoreEventCallbackConfig
       );
       if (returnCode !== 0) {
-        throw new LoreError(loreExecutor[STATE].errors, events, loreExecutor[STATE].completeError);
+        throw new LoreError(returnCode, loreExecutor[STATE].errors, events, loreExecutor[STATE].completeError);
       }
       return events;
     },
@@ -324,7 +324,7 @@ const createLoreExecutor = (_state: LoreFluentState, args: LoreArgs, fn: LoreFun
         const returnCode = await lorePromise;
         {# Throw an error, if the Lore call failed. #}
         if (returnCode !== 0) {
-          throw new LoreError(loreExecutor[STATE].errors, undefined, loreExecutor[STATE].completeError);
+          throw new LoreError(returnCode, loreExecutor[STATE].errors, undefined, loreExecutor[STATE].completeError);
         }
       }
     },
@@ -372,14 +372,14 @@ export const lore = {
   logConfigure: (logConfig: LoreLogConfig) => {
     const returnCode = loreInternal.logConfigure(logConfig);
     if (returnCode !== 0) {
-      throw new LoreError();
+      throw new LoreError(returnCode);
     }
     return returnCode;
   },
   shutdown: () =>  {
     const returnCode = loreInternal.shutdown();
     if (returnCode !== 0) {
-      throw new LoreError();
+      throw new LoreError(returnCode);
     }
     return returnCode;
   },
