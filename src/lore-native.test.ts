@@ -1536,6 +1536,12 @@ describe("lore-js-sdk", () => {
       async () => {
         await stageRandomFile();
 
+        // Reconcile once, single-threaded, before going parallel. A scan
+        // status walks the filesystem and persists refreshed dirty flags back
+        // into the staged state (rewriting the shared staged anchor + mtime
+        // cache in the mutable store).
+        await status();
+
         const calls = 1000;
         const promises: Promise<LoreFnResponseCode>[] = [];
         const events: LoreRepositoryStatusFileEvent[] = [];
@@ -1548,8 +1554,11 @@ describe("lore-js-sdk", () => {
               .repositoryStatus(
                 globalArgs,
                 {
+                  // Read-only: no scan, so these calls never write the shared
+                  // staged anchor / mtime cache. They read the staged state the
+                  // single reconcile pass above already settled.
                   staged: true,
-                  scan: true,
+                  scan: false,
                   unstaged: true,
                 } as LoreRepositoryStatusArgs,
                 {
