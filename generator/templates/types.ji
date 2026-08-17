@@ -128,10 +128,10 @@ export type LoreBinary<LoreContext = string, LoreHash = string, LoreBranchId = s
 
 {# Export Lore metadata union Typescript type #}
 export type LoreMetadata<LoreContext = string, LoreHash = string, LoreBranchId = string, LoreRepositoryId = string, LoreInstanceId = string, LorePartition = string> =
-  { tag: LoreMetadataTag.ADDRESS, tagName: "address", data: LoreAddress<LoreContext, LoreHash, LoreBranchId, LoreRepositoryId, LoreInstanceId, LorePartition> } |
-  { tag: LoreMetadataTag.BOOLEAN, tagName: "boolean", data: LoreBoolean } |
-  { tag: LoreMetadataTag.BINARY, tagName: "binary", data: LoreBinary } |
-  { tag: LoreMetadataTag.CONTEXT, tagName: "context", data: LoreContext } |
-  { tag: LoreMetadataTag.HASH, tagName: "hash", data: LoreHash } |
-  { tag: LoreMetadataTag.NUMERIC, tagName: "numeric", data: number } |
-  { tag: LoreMetadataTag.STRING, tagName: "string", data: LoreString };
+  { tag: LoreMetadataType.ADDRESS, tagName: "address", data: LoreAddress<LoreContext, LoreHash, LoreBranchId, LoreRepositoryId, LoreInstanceId, LorePartition> } |
+  { tag: LoreMetadataType.BOOLEAN, tagName: "boolean", data: LoreBoolean } |
+  { tag: LoreMetadataType.BINARY, tagName: "binary", data: LoreBinary } |
+  { tag: LoreMetadataType.CONTEXT, tagName: "context", data: LoreContext } |
+  { tag: LoreMetadataType.HASH, tagName: "hash", data: LoreHash } |
+  { tag: LoreMetadataType.NUMERIC, tagName: "numeric", data: number } |
+  { tag: LoreMetadataType.STRING, tagName: "string", data: LoreString };

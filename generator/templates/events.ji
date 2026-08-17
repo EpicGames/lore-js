@@ -79,7 +79,7 @@ Export a type map from LoreEventTag enum values to the corresponding event type 
 export type LoreEventTagLoreEventMap<LoreContext = string, LoreHash = string, LoreBranchId = string, LoreRepositoryId = string, LoreInstanceId = string, LorePartition = string> = {
   {% for enum_name, enum_values in symbols.enums.items() %}
     {% if enum_name == 'lore_event_tag_t' %}
-      {% for value in enum_values %}
+      {% for value, number in enum_values %}
         [LoreEventTag.{{value}}]: Lore{{pascal_case(value.lower())}}Event<LoreContext, LoreHash, LoreBranchId, LoreRepositoryId, LoreInstanceId, LorePartition>;
       {% endfor %}
     {% endif %}
@@ -102,7 +102,7 @@ Export a map from LoreEventTag enum values to the corresponding tag names.
 export const LoreEventTagTagNameMap: Record<LoreEventTag, LoreEvent["tagName"]> = {
   {% for enum_name, enum_values in symbols.enums.items() %}
     {% if enum_name == 'lore_event_tag_t' %}
-      {% for value in enum_values %}
+      {% for value, number in enum_values %}
         [LoreEventTag.{{value}}]: "{{camel_case(value.lower())}}",
       {% endfor %}
     {% endif %}
@@ -125,7 +125,7 @@ Export a map from lore event tag names to LoreEventTag enum values.
 export const TagNameLoreEventTagMap: Record<LoreEvent["tagName"], LoreEventTag> = {
   {% for enum_name, enum_values in symbols.enums.items() %}
     {% if enum_name == 'lore_event_tag_t' %}
-      {% for value in enum_values %}
+      {% for value, number in enum_values %}
         "{{camel_case(value.lower())}}": LoreEventTag.{{value}},
       {% endfor %}
     {% endif %}
@@ -155,7 +155,7 @@ Export type LoreEventFFI with tag and a getter for lazy loading the LoreEventDat
 export type LoreEventFFI = { userContext: number } & (
   {% for enum_name, enum_values in symbols.enums.items() %}
     {% if enum_name == 'lore_event_tag_t' %}
-      {% for value in enum_values %}
+      {% for value, number in enum_values %}
         | {
           tag: LoreEventTag.{{value}};
           data: Lore{{pascal_case(value.lower())}}EventData<LoreContextBinary, LoreHashBinary, LoreBranchIdBinary, LoreRepositoryIdBinary>;
@@ -206,7 +206,7 @@ Export Lore*Event types.
 
 {% for enum_name, enum_values in symbols.enums.items() %}
   {% if enum_name == 'lore_event_tag_t' %}
-    {% for value in enum_values %}
+    {% for value, number in enum_values %}
       export type Lore{{pascal_case(value.lower())}}Event<LoreContext = string, LoreHash = string, LoreBranchId = string, LoreRepositoryId = string, LoreInstanceId = string, LorePartition = string> = {
         userContext?: number;
         tag: LoreEventTag.{{value}};
@@ -228,7 +228,7 @@ Export a union type LoreEvent with tag or tag_name as type discriminator.
 export type LoreEvent<LoreContext = string, LoreHash = string, LoreBranchId = string, LoreRepositoryId = string, LoreInstanceId = string, LorePartition = string> = 
 {% for enum_name, enum_values in symbols.enums.items() %}
   {% if enum_name == 'lore_event_tag_t' %}
-    {% for value in enum_values %}
+    {% for value, number in enum_values %}
       | Lore{{pascal_case(value.lower())}}Event<LoreContext, LoreHash, LoreBranchId, LoreRepositoryId, LoreInstanceId, LorePartition>
     {% endfor %}
   {% endif %}
@@ -248,7 +248,7 @@ export type LoreEvent<LoreContext = string, LoreHash = string, LoreBranchId = st
 
 {% for enum_name, enum_values in symbols.enums.items() %}
   {% if enum_name == 'lore_event_tag_t' %}
-    {% for value in enum_values %}
+    {% for value, number in enum_values %}
 export function isEventType<LoreContext = string, LoreHash = string, LoreBranchId = string, LoreRepositoryId = string, LoreInstanceId = string, LorePartition = string>(e: LoreEvent<LoreContext, LoreHash, LoreBranchId, LoreRepositoryId, LoreInstanceId, LorePartition>, t: LoreEventTag.{{value}}): e is Lore{{pascal_case(value.lower())}}Event<LoreContext, LoreHash, LoreBranchId, LoreRepositoryId, LoreInstanceId, LorePartition>;
     {% endfor %}
   {% endif %}
@@ -307,7 +307,7 @@ const isValueDefined = (data: Record<string, unknown>, key: string) => data[key]
 export const loreEventTagLoreConversionTypesMap = {
   {% for enum_name, enum_values in symbols.enums.items() %}
     {% if enum_name == 'lore_event_tag_t' %}
-      {% for value in enum_values %}
+      {% for value, number in enum_values %}
         [LoreEventTag.{{value}}]: {{
           utils.generate_lore_conversion_types(
             (symbols.events.items() | list) + (symbols.types.items() | list),
@@ -387,13 +387,13 @@ export const parseLoreEventJSON = (loreEventJson: string): LoreEvent<string, str
   if (isEventType(event, LoreEventTag.METADATA)) {
     if (event.data.value.tag === undefined) {
       switch ((event as LoreMetadataEvent<string, string, string, string>).data.value.tagName) {
-        case "address": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataTag.ADDRESS; break;
-        case "boolean": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataTag.BOOLEAN; break;
-        case "binary": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataTag.BINARY; break;
-        case "context": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataTag.CONTEXT; break;
-        case "hash": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataTag.HASH; break;
-        case "numeric": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataTag.NUMERIC; break;
-        case "string": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataTag.STRING; break;
+        case "address": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataType.ADDRESS; break;
+        case "boolean": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataType.BOOLEAN; break;
+        case "binary": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataType.BINARY; break;
+        case "context": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataType.CONTEXT; break;
+        case "hash": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataType.HASH; break;
+        case "numeric": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataType.NUMERIC; break;
+        case "string": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataType.STRING; break;
       }
     }
   }
@@ -498,16 +498,16 @@ export const toClonableLoreEvent = <T extends LoreEvent<LoreContextBinary, LoreH
   convertBinaryValuesToClonable(event.data, conversionConfig);
   if (isEventType(event, LoreEventTag.METADATA)) {
     switch (event.data.value.tag) {
-      case LoreMetadataTag.ADDRESS:
+      case LoreMetadataType.ADDRESS:
         event.data.value.data = {
           hash: event.data.value.data.hash.toString() as unknown as LoreHashBinary,
           context: event.data.value.data.context.toString() as unknown as LoreContextBinary,
         };
         break;
-      case LoreMetadataTag.CONTEXT:
+      case LoreMetadataType.CONTEXT:
         event.data.value.data = event.data.value.data.toString() as unknown as LoreContextBinary;
         break;
-      case LoreMetadataTag.HASH:
+      case LoreMetadataType.HASH:
         event.data.value.data = event.data.value.data.toString() as unknown as LoreHashBinary;
         break;
     }

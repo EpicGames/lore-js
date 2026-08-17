@@ -215,7 +215,7 @@
     {% endfor %}
     {% for enum_name, enum_values in symbols.enums.items() %}
       {% if enum_name == 'lore_event_tag_t' %}
-        {% for value in enum_values %}
+        {% for value, number in enum_values %}
           Lore{{pascal_case(value.lower())}}Event,
         {% endfor %}
       {% endif %}

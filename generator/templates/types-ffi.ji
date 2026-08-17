@@ -54,6 +54,25 @@ export const LoreBinaryStruct = koffi.struct("LoreBinary", {
     length: "uintptr_t",
 });
 
+{# Export Lore metadata union C definition.
+   Defined before the auto-generated structs below because some of them embed
+   `struct lore_metadata_t`, and Koffi resolves field type names eagerly. #}
+export const LoreMetadataUnion = koffi.union({
+  address: LoreAddressStruct,
+  boolean: "uint8_t",
+  binary: LoreBinaryStruct,
+  context: LoreContextStruct,
+  hash: LoreHashStruct,
+  numeric: "uint64_t",
+  string: LoreStringStruct,
+});
+
+{# Export Lore metadata C struct definition #}
+export const LoreMetadataStruct = koffi.struct("LoreMetadata", {
+  tag: "LoreMetadataType",
+  data: koffi.array("uint8_t", koffi.sizeof(LoreMetadataUnion)),
+});
+
 {#
 
 Export Lore shared type Typescript interfaces and the corresponding Koffi struct definitions.
@@ -104,24 +123,5 @@ the result is:
         );
     {% endif %}
 {% endfor %}
-
-{# Export more types that have a custom mapping between Lore C types and JS types #}
-
-{# Export Lore metadata union C definition #}
-export const LoreMetadataUnion = koffi.union({
-  address: LoreAddressStruct,
-  boolean: "uint8_t",
-  binary: LoreBinaryStruct,
-  context: LoreContextStruct,
-  hash: LoreHashStruct,
-  numeric: "uint64_t",
-  string: LoreStringStruct,
-});
-
-{# Export Lore metadata C struct definition #}
-export const LoreMetadataStruct = koffi.struct("LoreMetadata", {
-  tag: "uint32_t",
-  data: koffi.array("uint8_t", koffi.sizeof(LoreMetadataUnion)),
-});
 
 export const loadTypesFFI = () => {};

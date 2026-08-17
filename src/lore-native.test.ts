@@ -18,7 +18,6 @@ import {
   LoreEventTag,
   LoreFileAction,
   LoreLogLevel,
-  LoreMetadataTag,
   LoreMetadataType,
 } from "@lore-vcs/sdk/types/enums";
 import {
@@ -581,24 +580,24 @@ describe("lore-js-sdk", () => {
       (event) => event.data.key === "message"
     );
 
-    if (customStringMetadataEvent?.data.value.tag !== LoreMetadataTag.STRING) {
+    if (customStringMetadataEvent?.data.value.tag !== LoreMetadataType.STRING) {
       fail("Expect string tag");
     }
     if (
-      customEmptyStringMetadataEvent?.data.value.tag !== LoreMetadataTag.STRING
+      customEmptyStringMetadataEvent?.data.value.tag !== LoreMetadataType.STRING
     ) {
       fail("Expect string tag");
     }
-    if (customBinaryMetadataEvent?.data.value.tag !== LoreMetadataTag.ADDRESS) {
+    if (customBinaryMetadataEvent?.data.value.tag !== LoreMetadataType.ADDRESS) {
       fail("Expect address tag");
     }
-    if (branchMetadataEvent?.data.value.tag !== LoreMetadataTag.CONTEXT) {
+    if (branchMetadataEvent?.data.value.tag !== LoreMetadataType.CONTEXT) {
       fail("Expect context tag");
     }
-    if (timestampMetadataEvent?.data.value.tag !== LoreMetadataTag.NUMERIC) {
+    if (timestampMetadataEvent?.data.value.tag !== LoreMetadataType.NUMERIC) {
       fail("Expect numeric tag");
     }
-    if (messageMetadataEvent?.data.value.tag !== LoreMetadataTag.STRING) {
+    if (messageMetadataEvent?.data.value.tag !== LoreMetadataType.STRING) {
       fail("Expect string tag");
     }
 
@@ -1182,7 +1181,7 @@ describe("lore-js-sdk", () => {
         expect(metadata.tag).toBe(LoreEventTag.METADATA);
         expect(metadata.data.key).toBe("merged-by");
         expect(metadata.data.value.tagName).toBe("string");
-        expect(metadata.data.value.tag).toBe(LoreMetadataTag.STRING);
+        expect(metadata.data.value.tag).toBe(LoreMetadataType.STRING);
         expect(
           metadata.data.value.tagName === "string" && metadata.data.value.data
         ).toBe("01928c29594b775f8715352b0d5e7a29");
@@ -1468,28 +1467,28 @@ describe("lore-js-sdk", () => {
 
       if (
         customStringMetadataEvent?.event.data.value.tag !==
-        LoreMetadataTag.STRING
+        LoreMetadataType.STRING
       ) {
         fail("Expect string tag");
       }
       if (
         customBinaryMetadataEvent?.event.data.value.tag !==
-        LoreMetadataTag.ADDRESS
+        LoreMetadataType.ADDRESS
       ) {
         fail("Expect address tag");
       }
       if (
-        branchMetadataEvent?.event.data.value.tag !== LoreMetadataTag.CONTEXT
+        branchMetadataEvent?.event.data.value.tag !== LoreMetadataType.CONTEXT
       ) {
         fail("Expect context tag");
       }
       if (
-        timestampMetadataEvent?.event.data.value.tag !== LoreMetadataTag.NUMERIC
+        timestampMetadataEvent?.event.data.value.tag !== LoreMetadataType.NUMERIC
       ) {
         fail("Expect numeric tag");
       }
       if (
-        messageMetadataEvent?.event.data.value.tag !== LoreMetadataTag.STRING
+        messageMetadataEvent?.event.data.value.tag !== LoreMetadataType.STRING
       ) {
         fail("Expect string tag");
       }
@@ -1502,7 +1501,7 @@ describe("lore-js-sdk", () => {
         messageMetadataEvent,
       ]) {
         const eventClone = structuredClone(event.event);
-        if (eventClone.data.value.tag === LoreMetadataTag.ADDRESS) {
+        if (eventClone.data.value.tag === LoreMetadataType.ADDRESS) {
           expect(eventClone.data.value.data.context).toBe(
             (
               event.valueBeforeClone as LoreAddress<
@@ -1519,7 +1518,7 @@ describe("lore-js-sdk", () => {
               >
             ).hash.toString()
           );
-        } else if (eventClone.data.value.tag === LoreMetadataTag.NUMERIC) {
+        } else if (eventClone.data.value.tag === LoreMetadataType.NUMERIC) {
           expect(eventClone.data.value.data).toBe(event.valueBeforeClone);
         } else {
           expect(eventClone.data.value.data).toBe(
@@ -1744,7 +1743,7 @@ describe("lore-js-sdk", () => {
             if (event.tag === LoreEventTag.METADATA) {
               if (
                 event.data.key === "message" &&
-                event.data.value.tag === LoreMetadataTag.STRING
+                event.data.value.tag === LoreMetadataType.STRING
               ) {
                 commitMessages.push(event.data.value.data);
               }
@@ -1982,7 +1981,7 @@ describe("lore-js-sdk", () => {
           if (event.tag === LoreEventTag.METADATA) {
             if (
               event.data.key === "message" &&
-              event.data.value.tag === LoreMetadataTag.STRING
+              event.data.value.tag === LoreMetadataType.STRING
             ) {
               commitMessages.push(event.data.value.data);
             }
@@ -2094,7 +2093,7 @@ describe("lore-js-sdk", () => {
       metadataEvents.some(
         (e) =>
           e.data.key === "test-key" &&
-          e.data.value.tag === LoreMetadataTag.STRING &&
+          e.data.value.tag === LoreMetadataType.STRING &&
           e.data.value.data === "test-value"
       )
     ).toBe(true);

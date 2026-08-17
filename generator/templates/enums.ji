@@ -22,8 +22,8 @@ the result is:
 {% for enum_name, enum_values in symbols.enums.items() %}
     export enum {{pascal_case(enum_name.removesuffix("_t"))}}
     {
-        {% for value in enum_values %}
-            {{value}} = {{loop.index - 1}},
+        {% for value, number in enum_values %}
+            {{value}} = {{number}},
         {% endfor %}
     };
 {% endfor %}
