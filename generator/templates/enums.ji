@@ -4,7 +4,7 @@
 
 {#
 
-Export Typescript enums and the corresponding Koffi aliases, that map them to uint32_t in C structs.
+Export Typescript enums and the corresponding Koffi aliases, that map them to int32_t in C structs.
 
 For instance, for the `enum lore_branch_location_t`
     typedef enum lore_branch_location_t {

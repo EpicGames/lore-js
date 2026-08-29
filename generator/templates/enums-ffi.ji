@@ -6,7 +6,7 @@ import koffi from "koffi";
 
 {#
 
-Export Typescript enums and the corresponding Koffi aliases, that map them to uint32_t in C structs.
+Export Typescript enums and the corresponding Koffi aliases, that map them to int32_t in C structs.
 
 For instance, for the `enum lore_branch_location_t`
     typedef enum lore_branch_location_t {
@@ -18,11 +18,15 @@ the result is:
 
     export const LoreBranchLocationDef = koffi.alias(
         "LoreBranchLocation",
-        "uint32_t"
+        "int32_t"
     );
+
+Enums are aliased to the signed `int32_t` rather than `uint32_t` so that negative
+enumerators (such as `LORE_ERROR_CODE_INTERNAL = -1`) round-trip instead of
+decoding as a large positive number.
 #}
 {% for enum_name, enum_values in symbols.enums.items() %}
-    export const {{pascal_case(enum_name.removesuffix("_t"))}}Def = koffi.alias('{{pascal_case(enum_name.removesuffix("_t"))}}', 'uint32_t');
+    export const {{pascal_case(enum_name.removesuffix("_t"))}}Def = koffi.alias('{{pascal_case(enum_name.removesuffix("_t"))}}', 'int32_t');
 {% endfor %}
 
 export const loadEnumsFFI = () => {};

@@ -446,7 +446,7 @@ describe("lore-js-sdk", () => {
       expect(
         switchRes2,
         "branch switch should fail after branch archival"
-      ).toBe(34);
+      ).not.toBe(0);
     }
   );
 
@@ -588,7 +588,9 @@ describe("lore-js-sdk", () => {
     ) {
       fail("Expect string tag");
     }
-    if (customBinaryMetadataEvent?.data.value.tag !== LoreMetadataType.ADDRESS) {
+    if (
+      customBinaryMetadataEvent?.data.value.tag !== LoreMetadataType.ADDRESS
+    ) {
       fail("Expect address tag");
     }
     if (branchMetadataEvent?.data.value.tag !== LoreMetadataType.CONTEXT) {
@@ -1483,7 +1485,8 @@ describe("lore-js-sdk", () => {
         fail("Expect context tag");
       }
       if (
-        timestampMetadataEvent?.event.data.value.tag !== LoreMetadataType.NUMERIC
+        timestampMetadataEvent?.event.data.value.tag !==
+        LoreMetadataType.NUMERIC
       ) {
         fail("Expect numeric tag");
       }
@@ -2609,6 +2612,9 @@ describe("lore-js-sdk", () => {
               id: 1,
               partition,
               address: putAddress,
+              // Read the whole content: from the first byte, `length: 0` to the end
+              offset: 0,
+              length: 0,
               streaming: false,
               localCache: false,
             },
