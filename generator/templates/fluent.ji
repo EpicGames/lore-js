@@ -101,7 +101,14 @@ export interface LoreFluentApi {
     [STATE]: LoreFluentState;
     filterByType: (...args: LoreEventTag[]) => LoreFluentApi;
     userContext: (userContext: number) => LoreFluentApi;
+    /** Sets when the event FFI strings are decoded into JS strings. See {@link LoreJSStringDecodeMode}. */
     stringDecodeMode: (stringDecodeMode: LoreJSStringDecodeMode) => LoreFluentApi;
+    /**
+     * Registers a callback invoked once per emitted event. The received
+     * {@link LoreEventFFI} is backed by native memory that is freed when the
+     * callback returns: read `event.data` only inside the callback, and call
+     * `event.clone()` inside the callback to keep an event beyond it.
+     */
     callback: (cb: LoreEventCallbackFunction) => LoreFluentApi;
     waitAsync: () => Promise<LoreFnResponseCode>;
     collectAsync: () => Promise<LoreEvent[]>;

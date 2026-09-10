@@ -147,11 +147,13 @@ describe("lore-js-sdk-fluent", () => {
       })
       .waitAsync();
 
-    // With LAZY decoding the FFI string pointer is freed once the callback
-    // returns, so branchName can no longer be decoded to "main" outside it.
+    // With LAZY decoding the FFI string pointers are invalidated once the
+    // callback returns, so branchName can no longer be decoded outside it.
     // (With the DEFAULT eager mode this would read back as "main".)
     expect(statusEvents.length).toBeGreaterThan(0);
-    expect(statusEvents[0]?.data.branchName).not.toBe("main");
+    expect(() => statusEvents[0]?.data.branchName).toThrowError(
+      "Event payload strings can be decoded only inside the event callback handler."
+    );
   });
 
   test("callback with filter should work", async () => {

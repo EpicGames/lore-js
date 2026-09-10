@@ -152,13 +152,27 @@ Export type LoreEventFFI with tag and a getter for lazy loading the LoreEventDat
       // [...]
 
 #}
+/**
+ * A Lore event as delivered to an event callback over the native FFI boundary.
+ *
+ * The event is backed by native memory that is only valid for the duration of the
+ * callback invocation: `data` (and, with {@link LoreJSStringDecodeMode.LAZY}, its
+ * individual string fields) is decoded lazily from that memory, so it must only be
+ * accessed inside the callback. Accessing not-yet-decoded data after the callback
+ * throws an error.
+ *
+ * To use an event after the callback has returned, call `clone()` inside the
+ * callback and keep the returned {@link LoreEvent}, which is a plain JS-owned copy.
+ */
 export type LoreEventFFI = { userContext: number } & (
   {% for enum_name, enum_values in symbols.enums.items() %}
     {% if enum_name == 'lore_event_tag_t' %}
       {% for value, number in enum_values %}
         | {
           tag: LoreEventTag.{{value}};
+          /** Event payload, decoded lazily from native memory. Accessible only inside the event callback. */
           data: Lore{{pascal_case(value.lower())}}EventData<LoreContextBinary, LoreHashBinary, LoreBranchIdBinary, LoreRepositoryIdBinary>;
+          /** Decodes the full event payload and returns a JS-owned copy that stays valid after the callback returns. Must be called inside the event callback. */
           clone: () => Lore{{pascal_case(value.lower())}}Event;
         }
       {% endfor %}
@@ -168,19 +182,35 @@ export type LoreEventFFI = { userContext: number } & (
 
 export type LoreEventFFITyped<T extends LoreEventTag> = Extract<LoreEventFFI, { tag: T }>;
 
+/**
+ * Controls when event FFI strings are decoded from native memory into JS strings.
+ * In both modes the native memory is only valid inside the event callback — call
+ * `clone()` inside the callback to keep an event beyond it.
+ */
 export enum LoreJSStringDecodeMode {
   /** Decode all the event FFI strings into JS strings on initial event access. This is more performant, if you are cloning the whole event, or accessing most of the strings. */
   DEFAULT = 0,
-  /**  Lazy decode the individual FFI strings into JS strings when accessing the string. This is more performant, if you you are not going to clone the whole event and not going to access most of the strings. */
+  /** Lazy decode the individual FFI strings into JS strings when accessing the string. This is more performant, if you are not going to clone the whole event and not going to access most of the strings. Strings not accessed inside the event callback become inaccessible once the callback returns (accessing them throws). */
   LAZY = 1,
 };
 
 {# External JS callback function definition, different from the raw C callback. #}
+/**
+ * Callback invoked once per event emitted by a Lore call.
+ *
+ * The received {@link LoreEventFFI} is backed by native memory that is freed when
+ * the callback returns: read `event.data` only inside the callback, and call
+ * `event.clone()` inside the callback to get a JS-owned {@link LoreEvent} if the
+ * event is needed afterwards.
+ */
 export declare type LoreEventCallbackFunction = (event: LoreEventFFI) => void;
 
 export declare interface LoreEventCallbackConfig {
+  /** Value passed back as `userContext` on every event emitted by the call. */
   userContext?: number;
+  /** Event callback. See {@link LoreEventCallbackFunction} for the event lifetime rules. */
   callback: LoreEventCallbackFunction;
+  /** When the event FFI strings are decoded into JS strings. See {@link LoreJSStringDecodeMode}. */
   stringDecodeMode?: LoreJSStringDecodeMode;
 }
 

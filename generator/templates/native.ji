@@ -186,6 +186,9 @@ const convertFromLoreDatatype = (args: any, convertOptions: IDatatypeConvertOpti
       Object.defineProperty(convertedArgs, loreString, {
         get() {
           if (this[STRING_CACHE][loreString] === undefined) {
+            if (this[STRING_POINTERS][loreString] === null) {
+              throw new Error("Event payload strings can be decoded only inside the event callback handler.");
+            }
             this[STRING_CACHE][loreString] = fromLoreString(this[STRING_POINTERS][loreString]);
             this[STRING_POINTERS][loreString] = null;
           }
@@ -251,6 +254,28 @@ const convertFromLoreDatatype = (args: any, convertOptions: IDatatypeConvertOpti
     convertedArgs[complexType.field] = convertFromLoreDatatype(convertedArgs[complexType.field], complexType.conversionTypes, stringDecodeMode);
   });
   return convertedArgs;
+}
+
+{# Nulls the FFI string pointers saved for lazily decoded strings, recursing into array and
+   complex fields. Called when the event callback returns — the native memory backing the
+   pointers is only valid for the duration of the callback invocation, so a not-yet-decoded
+   lazy string accessed after this throws instead of decoding freed memory.
+#}
+const invalidateLazyStrings = (data: any, convertOptions: IDatatypeConvertOptions) => {
+  if (!data || typeof data !== "object") {
+    return;
+  }
+  if (data[STRING_POINTERS]) {
+    Object.keys(data[STRING_POINTERS]).forEach((key) => {
+      data[STRING_POINTERS][key] = null;
+    });
+  }
+  convertOptions.arrayTypes?.filter((arrayType) => Array.isArray(data[arrayType.field])).forEach((arrayType) => {
+    data[arrayType.field].forEach((entry: any) => invalidateLazyStrings({ ptr: entry }, arrayType.conversionTypes));
+  });
+  convertOptions.complexTypes?.filter((complexType) => isValueDefined(data, complexType.field)).forEach((complexType) => {
+    invalidateLazyStrings(data[complexType.field], complexType.conversionTypes);
+  });
 }
 
 {# Decodes given payload C memory pointer into a JS object. Uses the data type definition
@@ -477,9 +502,10 @@ const buildCallbackConfig = (
   let registeredCallback: koffi.IKoffiRegisteredCallback | null = null;
   const callbackFn = (eventPtr: any, userContext: number) => {
       let tag: LoreEventTag | undefined = undefined;
+      let event: any = undefined;
       try {
         tag = parseEventTag(eventPtr);
-        const event = parseEvent(
+        event = parseEvent(
           eventPtr,
           userContext,
           tag,
@@ -488,13 +514,25 @@ const buildCallbackConfig = (
         );
 
         callback(event);
-
-        {# Make the data pointers inaccessible after the callback. #}
-        (event as any)[EVENT_DATA_POINTER] = null;
       } catch (e) {
         console.error(e);
         throw e;
       } finally {
+        {# Make the data pointers inaccessible after the callback — the native memory backing
+           them is only valid for the duration of the callback invocation. This includes the
+           FFI string pointers held by lazy string getters on already-decoded event data. #}
+        if (event) {
+          event[EVENT_DATA_POINTER] = null;
+          if (
+            stringDecodeMode === LoreJSStringDecodeMode.LAZY &&
+            event[EVENT_DATA]
+          ) {
+            invalidateLazyStrings(
+              event[EVENT_DATA],
+              loreEventTagLoreConversionTypesMap[tag as LoreEventTag]
+            );
+          }
+        }
         if (tag === LoreEventTag.END) {
           if (registeredCallback) {
             koffi.unregister(registeredCallback);

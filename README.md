@@ -46,6 +46,9 @@ await lore
   .repositoryStatus(globals, args)
   .callback((event: LoreEventFFI) => {
     if (event.tag === LoreEventTag.REPOSITORY_STATUS_FILE) {
+      // The event is backed by native memory that is freed when this callback
+      // returns. Read event.data only inside the callback. Call event.clone()
+      // here to get a JS-owned copy if you need the event afterwards.
       console.log(event.data);
     }
   })

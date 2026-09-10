@@ -1126,7 +1126,124 @@ describe("lore-js-sdk", () => {
       printLogsIfLoreCallFailed(statusRes);
 
       expect(statusRes).toBe(0);
-      expect(repoStatusEvents[0]?.data.branchName).not.toBe("main");
+      expect(() => repoStatusEvents[0]?.data.branchName).toThrowError(
+        "Event payload strings can be decoded only inside the event callback handler."
+      );
+    });
+
+    test("clone() inside the callback should keep lazy strings accessible outside it", async () => {
+      await stageRandomFile();
+      const repoStatusEvents: LoreRepositoryStatusRevisionEvent[] = [];
+      const { gatherLogs, printLogsIfLoreCallFailed } = createErrorHandler();
+      const statusRes = await lore.repositoryStatus(
+        globalArgs,
+        {
+          staged: true,
+          scan: true,
+          unstaged: true,
+        } as LoreRepositoryStatusArgs,
+        {
+          callback: (event) => {
+            if (event.tag === LoreEventTag.REPOSITORY_STATUS_REVISION) {
+              repoStatusEvents.push(event.clone());
+            }
+            gatherLogs(event);
+          },
+          stringDecodeMode: LoreJSStringDecodeMode.LAZY,
+        }
+      );
+      printLogsIfLoreCallFailed(statusRes);
+
+      expect(statusRes).toBe(0);
+      expect(repoStatusEvents[0]?.data.branchName).toBe("main");
+    });
+
+    test("clone() outside the callback should fail, if lazy strings were not accessed in the callback", async () => {
+      await stageRandomFile();
+      const repoStatusEvents: LoreEventFFITyped<LoreEventTag.REPOSITORY_STATUS_REVISION>[] =
+        [];
+      const { gatherLogs, printLogsIfLoreCallFailed } = createErrorHandler();
+      const statusRes = await lore.repositoryStatus(
+        globalArgs,
+        {
+          staged: true,
+          scan: true,
+          unstaged: true,
+        } as LoreRepositoryStatusArgs,
+        {
+          callback: (event) => {
+            if (event.tag === LoreEventTag.REPOSITORY_STATUS_REVISION) {
+              const _read = event.data; // decoded when accessed inside the callback
+              repoStatusEvents.push(event);
+            }
+            gatherLogs(event);
+          },
+          stringDecodeMode: LoreJSStringDecodeMode.LAZY,
+        }
+      );
+      printLogsIfLoreCallFailed(statusRes);
+
+      expect(statusRes).toBe(0);
+      expect(() => repoStatusEvents[0]?.clone()).toThrowError(
+        "Event payload strings can be decoded only inside the event callback handler."
+      );
+    });
+
+    test("string arrays should stay accessible outside the callback, while unaccessed lazy strings throw", async () => {
+      // String arrays (tags) are unwrapped element by element during the event
+      // data decode, which realizes them as JS strings already inside the
+      // callback — even in LAZY mode. Scalar strings (path, dependency) stay
+      // lazy and must become inaccessible once the callback returns.
+      const srcPath = path.join(repositoryPath, "dep-src.txt");
+      const dstPath = path.join(repositoryPath, "dep-dst.txt");
+      fs.writeFileSync(srcPath, "src");
+      fs.writeFileSync(dstPath, "dst");
+
+      const { gatherLogs, printLogsIfLoreCallFailed } = createErrorHandler();
+      const stageRes = await lore.fileStage(
+        globalArgs,
+        { paths: [srcPath, dstPath] },
+        { callback: gatherLogs }
+      );
+      expect(stageRes).toBe(0);
+      const { commitRes } = await commit();
+      expect(commitRes).toBe(0);
+
+      const addEntries: LoreEventFFITyped<LoreEventTag.FILE_DEPENDENCY_ADD_ENTRY>[] =
+        [];
+      const addRes = await lore.fileDependencyAdd(
+        globalArgs,
+        {
+          paths: [srcPath],
+          depCounts: [1],
+          dependencies: [dstPath],
+          tagCounts: [2],
+          tags: ["alpha", "beta"],
+        },
+        {
+          callback: (event) => {
+            if (event.tag === LoreEventTag.FILE_DEPENDENCY_ADD_ENTRY) {
+              const _read = event.data; // decoded when accessed inside the callback
+              addEntries.push(event);
+            }
+            gatherLogs(event);
+          },
+          stringDecodeMode: LoreJSStringDecodeMode.LAZY,
+        }
+      );
+      printLogsIfLoreCallFailed(addRes);
+
+      expect(addRes).toBe(0);
+      expect(addEntries.length).toBe(1);
+      // The string array was realized inside the callback and is JS-owned.
+      expect([...addEntries[0].data.tags].sort()).toEqual(["alpha", "beta"]);
+      // The scalar lazy strings were never decoded and must throw.
+      expect(() => addEntries[0].data.path).toThrowError(
+        "Event payload strings can be decoded only inside the event callback handler."
+      );
+      expect(() => addEntries[0].data.dependency).toThrowError(
+        "Event payload strings can be decoded only inside the event callback handler."
+      );
     });
   });
 
