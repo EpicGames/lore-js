@@ -43,6 +43,8 @@ IGNORED_FUNCTIONS = [
     "lore_version",
     "lore_user_directory",
     "lore_log_configure",
+    "lore_set_compression_mode",
+    "lore_set_compression_level",
 ]
 
 # Functions that register a long-running Koffi callback listener — these can

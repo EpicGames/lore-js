@@ -661,5 +661,7 @@ export const lore = {
     },
     shutdown: () => loreShutdown(),
     setThreadLimit: (count: number) => loreSetThreadLimit(count),
+    setCompressionMode: (mode: LoreCompressionMode) => loreSetCompressionMode(mode),
+    setCompressionLevel: (level: number) => loreSetCompressionLevel(level),
     version: () => loreVersion(),
 };

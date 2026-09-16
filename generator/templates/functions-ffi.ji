@@ -150,6 +150,14 @@ export const loreSetThreadLimit = lib.func("lore_set_thread_limit", "int32_t", [
   "uintptr_t",
 ]);
 
+export const loreSetCompressionMode = lib.func("lore_set_compression_mode", "int32_t", [
+  "uint32_t",
+]);
+
+export const loreSetCompressionLevel = lib.func("lore_set_compression_level", "int32_t", [
+  "int32_t",
+]);
+
 export const loreVersion = lib.func("lore_version", "char*", []);
 
 export const loadFunctionsFFI = () => {};

@@ -391,6 +391,8 @@ export const lore = {
     return returnCode;
   },
   setThreadLimit: (count: number) => loreInternal.setThreadLimit(count),
+  setCompressionMode: (mode: LoreCompressionMode) => loreInternal.setCompressionMode(mode),
+  setCompressionLevel: (level: number) => loreInternal.setCompressionLevel(level),
   version: () => loreInternal.version(),
   globalCallback: <T extends LoreEventTag>(event: T, callback: (event: LoreEventFFITyped<T>) => void) => {
     if (!lore[STATE].eventSubcriptions[event]) {
