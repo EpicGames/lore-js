@@ -618,6 +618,71 @@ const callLore = (
     );
   });
 
+{# Koffi relays callbacks from Lore's threads through an unref'd threadsafe function,
+   so a call made through a `_async` variant does not keep the event loop alive by
+   itself. This timer never fires. It is ref'd while any such call is in flight
+   to keep the process alive until the last async call has ended. #}
+const asyncCallKeepAlive = setInterval(() => {}, 1 << 30).unref();
+let asyncCallsInFlight = 0;
+const beginAsyncCall = () => {
+  if (asyncCallsInFlight++ === 0) {
+    asyncCallKeepAlive.ref();
+  }
+};
+const endAsyncCall = () => {
+  if (--asyncCallsInFlight === 0) {
+    asyncCallKeepAlive.unref();
+  }
+};
+
+{# Calls the `_async` variant of a Lore C API function. It returns at once and runs the
+   operation on Lore's own runtime. The result code is read from the `status` code of
+   the COMPLETE event.
+
+   The converted args are kept reachable until END. #}
+const callLoreAsync = (
+  fn: koffi.KoffiFunction,
+  globalArgs: LoreGlobalArgs,
+  args: LoreArgs,
+  callbackConfig: LoreEventCallbackConfig,
+  convertOptions: IDatatypeConvertOptions,
+): Promise<LoreFnResponseCode> =>
+  new Promise<LoreFnResponseCode>((resolve, reject) => {
+    const allocations: any[] = [];
+    const convertedGlobalArgs = convertToLoreDatatype(globalArgs, loreGlobalArgsConversionOptions, allocations);
+    const convertedArgs = convertToLoreDatatype(args, convertOptions, allocations);
+    let status: LoreFnResponseCode = 0;
+    const internalCallbackConfig = buildCallbackConfig(
+      {
+        ...callbackConfig,
+        callback: (event) => {
+          if (event.tag === LoreEventTag.COMPLETE) {
+            status = event.data.status;
+          }
+          callbackConfig.callback(event);
+        },
+      },
+      true,
+      () => {
+        void convertedGlobalArgs;
+        void convertedArgs;
+        allocations.length = 0;
+        endAsyncCall();
+        resolve(status);
+      },
+    );
+    beginAsyncCall();
+    try {
+      fn(convertedGlobalArgs, convertedArgs, internalCallbackConfig);
+    } catch (err) {
+      {# Marshalling failed, so the call never started and no END will arrive. #}
+      koffi.unregister(internalCallbackConfig.callback as unknown as koffi.IKoffiRegisteredCallback);
+      allocations.length = 0;
+      endAsyncCall();
+      reject(err);
+    }
+  });
+
 {# Exports the externally visible public Lore API. Auto-generates the JS -> C conversion types for each
    function at build time.
 
@@ -639,6 +704,15 @@ export const lore = {
               globals: LoreGlobalArgs,
               args: {{ pascal_case(function_args.removesuffix("_t")) }},
               callback: LoreEventCallbackConfig
+            {% if function_name in native_async_functions %}
+            ): Promise<LoreFnResponseCode> => callLoreAsync(
+              {{ function_name }}_async,
+              globals,
+              args,
+              callback,
+              {{ utils.generate_lore_conversion_types(symbols.args.items(), function_args, symbols.enums.items(), symbols) }}
+            ),
+            {% else %}
             ): Promise<LoreFnResponseCode> => callLore(
               {{ function_name }},
               globals,
@@ -649,6 +723,7 @@ export const lore = {
                 true,
               {% endif %}
             ),
+            {% endif %}
         {% endif %}
     {% endfor %}
     logConfigure: (config: LoreLogConfig) => {

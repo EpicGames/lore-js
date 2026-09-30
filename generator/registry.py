@@ -171,6 +171,23 @@ def _detect_in(struct_dict, visitor):
     return detected
 
 
+def _native_async_functions(visitor):
+    """Functions called through their `lore_*_async` variant.
+
+    The async variant returns at once and runs the operation on Lore's own
+    runtime, so a call in flight does not hold a libuv threadpool thread.
+    Registered-callback functions keep the blocking variant: their promise
+    resolves when the call returns, not at END.
+    """
+    return {
+        name
+        for name in visitor.functions
+        if f"{name}_async" in visitor.functions
+        and name not in IGNORED_FUNCTIONS
+        and name not in REGISTERED_CALLBACK_FUNCTIONS
+    }
+
+
 def build_augmented(visitor):
     """Return Jinja globals derived from the parsed header.
 
@@ -180,6 +197,8 @@ def build_augmented(visitor):
         array_type_map                - lookup by C type, covers both lists
         ignored_functions             - functions skipped by emit loops
         registered_callback_functions - long-running callback functions
+        native_async_functions        - functions called via their `_async`
+                                        variant (see _native_async_functions)
         custom_types                  - types with hand-written wrappers
         native_types                  - C scalar types
         cToJsTypeMap                  - C -> TypeScript type lookup
@@ -193,6 +212,7 @@ def build_augmented(visitor):
         "array_type_map": array_type_map,
         "ignored_functions": IGNORED_FUNCTIONS,
         "registered_callback_functions": REGISTERED_CALLBACK_FUNCTIONS,
+        "native_async_functions": _native_async_functions(visitor),
         "custom_types": CUSTOM_TYPES,
         "native_types": NATIVE_TYPES,
         "cToJsTypeMap": _build_c_to_js_type_map(visitor),

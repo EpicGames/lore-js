@@ -128,6 +128,9 @@ the result is:
       LoreEventCallbackConfigInternalStruct,
     ]);
 
+Functions in native_async_functions also get their `_async` variant bound, e.g.
+`lore_branch_create_async` returning "void".
+
 #}
 {% for function_name, function_args in symbols.functions.items() %}
     {% if function_name not in ignored_functions and "async" not in function_name %}
@@ -136,6 +139,13 @@ the result is:
             koffi.pointer({{pascal_case(function_args.removesuffix("_t"))}}Struct),
             LoreEventCallbackConfigInternalStruct,
         ]);
+        {% if function_name in native_async_functions %}
+            export const {{function_name}}_async = lib.func("{{function_name}}_async", "void", [
+                koffi.pointer(LoreGlobalArgsStruct),
+                koffi.pointer({{pascal_case(function_args.removesuffix("_t"))}}Struct),
+                LoreEventCallbackConfigInternalStruct,
+            ]);
+        {% endif %}
     {% endif %}
 {% endfor %}
 

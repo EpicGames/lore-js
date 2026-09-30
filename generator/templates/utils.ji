@@ -284,6 +284,9 @@
     {% for function_name, function_args in symbols.functions.items() %}
       {% if function_name not in ignored_functions and "async" not in function_name %}
         {{ function_name }},
+        {% if function_name in native_async_functions %}
+          {{ function_name }}_async,
+        {% endif %}
       {% endif %}
     {% endfor %}
     loreLogConfigure,
