@@ -133,5 +133,6 @@ export type LoreMetadata<LoreContext = string, LoreHash = string, LoreBranchId =
   { tag: LoreMetadataType.BINARY, tagName: "binary", data: LoreBinary } |
   { tag: LoreMetadataType.CONTEXT, tagName: "context", data: LoreContext } |
   { tag: LoreMetadataType.HASH, tagName: "hash", data: LoreHash } |
-  { tag: LoreMetadataType.NUMERIC, tagName: "numeric", data: number } |
+  {# A uint64_t: values above Number.MAX_SAFE_INTEGER are delivered as a bigint. #}
+  { tag: LoreMetadataType.NUMERIC, tagName: "numeric", data: number | bigint } |
   { tag: LoreMetadataType.STRING, tagName: "string", data: LoreString };

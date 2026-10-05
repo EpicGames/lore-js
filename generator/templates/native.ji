@@ -70,6 +70,60 @@ const toLoreBinary = (data: LoreBinary) => {
   };
 };
 
+{# Converts a fixed-size identifier (context, hash, partition, branch id, ...) given
+   as a hex string, raw bytes, or an already-binary `{ data }` object into the
+   `{ data: Uint8Array }` shape the Koffi structs expect. #}
+const toLoreIdInternal = (value: unknown): { data: Uint8Array } => {
+  if (typeof value === "string") {
+    return { data: hexStringToByteArray(value) };
+  }
+  if (value instanceof Uint8Array) {
+    return { data: value };
+  }
+  return value as { data: Uint8Array };
+};
+
+{# Converts a JS LoreMetadata value into the `{ tag, data: { <member>: ... } }` shape
+   Koffi needs for `lore_metadata_t`: exactly one union member is set, chosen by tag.
+   String/binary payloads are passed by pointer, so their buffers are collected in
+   `allocations` to stay alive for the duration of the native call. #}
+const toLoreMetadata = (value: LoreMetadata<any, any, any, any, any, any>, allocations: any[]) => {
+  {# `tag` is optional in practice (JSON-sourced values may carry only `tagName`), so
+     look at the loose shape rather than the discriminated union. #}
+  const loose = value as { tag?: LoreMetadataType; tagName?: LoreMetadata["tagName"] };
+  const tag: LoreMetadataType | undefined =
+    loose.tag ?? (loose.tagName !== undefined ? TagNameLoreMetadataTypeMap[loose.tagName] : undefined);
+  switch (tag) {
+    case LoreMetadataType.ADDRESS:
+      return {
+        tag,
+        data: {
+          address: {
+            hash: toLoreIdInternal(value.data.hash),
+            context: toLoreIdInternal(value.data.context),
+          },
+        },
+      };
+    case LoreMetadataType.BOOLEAN:
+      return { tag, data: { boolean: value.data ? 1 : 0 } };
+    case LoreMetadataType.BINARY: {
+      const bytes = value.data as Uint8Array;
+      allocations.push(bytes);
+      return { tag, data: { binary: toLoreBinary(bytes) } };
+    }
+    case LoreMetadataType.CONTEXT:
+      return { tag, data: { context: toLoreIdInternal(value.data) } };
+    case LoreMetadataType.HASH:
+      return { tag, data: { hash: toLoreIdInternal(value.data) } };
+    case LoreMetadataType.NUMERIC:
+      return { tag, data: { numeric: value.data } };
+    case LoreMetadataType.STRING:
+      return { tag, data: { string: toLoreString(value.data as string, allocations) } };
+    default:
+      throw new Error(`Unrecognized metadata type ${tag}`);
+  }
+};
+
 const byteArrayToHexString = (array: Uint8Array): string => 
   Array.from(array).map((decimal) => decimal.toString(16).padStart(2, "0")).join('');
 
@@ -138,16 +192,31 @@ const convertToLoreDatatype = (args: any, convertOptions: IDatatypeConvertOption
     convertedArgs[loreBinary] = toLoreBinary(convertedArgs[loreBinary]);
   });
   convertOptions.lorePartition?.filter((key) => isValueDefined(convertedArgs, key)).forEach((lorePartition) => {
-    convertedArgs[lorePartition] = { data: hexStringToByteArray(convertedArgs[lorePartition]) };
+    convertedArgs[lorePartition] = toLoreIdInternal(convertedArgs[lorePartition]);
   });
   convertOptions.loreContext?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreContext) => {
-    convertedArgs[loreContext] = { data: hexStringToByteArray(convertedArgs[loreContext]) };
+    convertedArgs[loreContext] = toLoreIdInternal(convertedArgs[loreContext]);
+  });
+  convertOptions.loreHash?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreHash) => {
+    convertedArgs[loreHash] = toLoreIdInternal(convertedArgs[loreHash]);
+  });
+  convertOptions.loreBranchId?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreBranchId) => {
+    convertedArgs[loreBranchId] = toLoreIdInternal(convertedArgs[loreBranchId]);
+  });
+  convertOptions.loreRepositoryId?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreRepositoryId) => {
+    convertedArgs[loreRepositoryId] = toLoreIdInternal(convertedArgs[loreRepositoryId]);
+  });
+  convertOptions.loreInstanceId?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreInstanceId) => {
+    convertedArgs[loreInstanceId] = toLoreIdInternal(convertedArgs[loreInstanceId]);
   });
   convertOptions.loreAddress?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreAddress) => {
     convertedArgs[loreAddress] = {
-      hash: { data: hexStringToByteArray(convertedArgs[loreAddress].hash) },
-      context: { data: hexStringToByteArray(convertedArgs[loreAddress].context) },
+      hash: toLoreIdInternal(convertedArgs[loreAddress].hash),
+      context: toLoreIdInternal(convertedArgs[loreAddress].context),
     };
+  });
+  convertOptions.loreMetadata?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreMetadata) => {
+    convertedArgs[loreMetadata] = toLoreMetadata(convertedArgs[loreMetadata], allocations);
   });
   convertOptions.arrayTypes?.filter((arrayType) => isValueDefined(convertedArgs, arrayType.field)).forEach((arrayType) => {
     const data = convertedArgs[arrayType.field] ?? [];
@@ -241,6 +310,9 @@ const convertFromLoreDatatype = (args: any, convertOptions: IDatatypeConvertOpti
       ? convertedArgs[loreInstanceId].map((item) => toLoreInstanceId(item))
       : toLoreInstanceId(convertedArgs[loreInstanceId]);
   });
+  convertOptions.loreMetadata?.filter((key) => isValueDefined(convertedArgs, key)).forEach((loreMetadata) => {
+    convertedArgs[loreMetadata] = parseMetadata(convertedArgs[loreMetadata]);
+  });
   convertOptions.arrayTypes?.filter((arrayType) => isValueDefined(convertedArgs, arrayType.field)).forEach((arrayType) => {
     const field = convertedArgs[arrayType.field];
     if (!field || field.ptr == null || !field.count) {
@@ -333,21 +405,11 @@ const parseEvent = <T extends LoreEventTag>(
         if (this[EVENT_DATA_POINTER] === null) {
           throw new Error("Event payload can be decoded only inside the event callback handler.");
         }
-        let eventDecoded = convertFromLoreDatatype(
+        const eventDecoded = convertFromLoreDatatype(
           decodePayload(this[EVENT_DATA_POINTER], this[EVENT_TYPE], loreEventDataRawDataOffset),
           loreEventTagLoreConversionTypesMap[this.tag as T],
           stringDecodeMode
         );
-        if (this.tag === LoreEventTag.METADATA) {
-          const metadataDecoded = parseMetadata(this[EVENT_DATA_POINTER], eventDecoded);
-          eventDecoded = {
-            ...eventDecoded,
-            value: {
-              ...eventDecoded.value,
-              ...metadataDecoded,
-            }
-          };
-        }
         this[EVENT_DATA] = eventDecoded;
         this[EVENT_DATA_POINTER] = null;
         return eventDecoded as LoreEventTagLoreEventMap[T];
@@ -364,23 +426,16 @@ const parseEvent = <T extends LoreEventTag>(
   }
 };
 
-{# Offset into the metadata payload inside the metadata event struct #}
-const loreMetadataRawDataOffset =
-  loreEventDataRawDataOffset +
-  koffi.offsetof(LoreMetadataEventDataStruct, "value") +
-  koffi.offsetof(LoreMetadataStruct, "data") +
-  koffi.sizeof("uint32_t");
-
-{# Parse metadata into a JS object #}
-const parseMetadata = (payload: any, decoded: any): LoreMetadata<LoreContextBinary, LoreHashBinary, LoreBranchIdBinary, LoreRepositoryIdBinary, LoreInstanceIdBinary, LorePartitionBinary> => {
-  const tag: LoreMetadataType = decoded?.value?.tag;
+{# Parse a decoded `lore_metadata_t` into a JS LoreMetadata object.
+   `value.data` is the Koffi Union decoded from the struct; only the member named
+   by `tag` is valid, and it is read eagerly here so the result does not depend on
+   the event memory staying alive. #}
+const parseMetadata = (value: any): LoreMetadata<LoreContextBinary, LoreHashBinary, LoreBranchIdBinary, LoreRepositoryIdBinary, LoreInstanceIdBinary, LorePartitionBinary> => {
+  const tag: LoreMetadataType = value?.tag;
+  const union = value?.data;
   switch(tag) {
-    case LoreMetadataType.ADDRESS:
-      const addressRaw = decodePayload(
-          payload,
-          LoreAddressStruct,
-          loreMetadataRawDataOffset
-        ) as LoreAddressInternal;
+    case LoreMetadataType.ADDRESS: {
+      const addressRaw = union.address as LoreAddressInternal;
       return {
         tag,
         tagName: "address",
@@ -389,71 +444,49 @@ const parseMetadata = (payload: any, decoded: any): LoreMetadata<LoreContextBina
           context: toLoreContext(addressRaw.context),
         } as LoreAddress<LoreContextBinary, LoreHashBinary, LoreBranchIdBinary, LoreRepositoryIdBinary, LoreInstanceIdBinary, LorePartitionBinary>,
       };
+    }
     case LoreMetadataType.BOOLEAN:
       return {
         tag,
         tagName: "boolean",
-        data: !!decodePayload(
-          payload,
-          "uint8_t",
-          loreMetadataRawDataOffset
-        ) as LoreBoolean,
+        data: !!union.boolean as LoreBoolean,
       };
-    case LoreMetadataType.BINARY:
+    case LoreMetadataType.BINARY: {
+      const binaryRaw = union.binary as { payload: any; length: bigint | number };
+      const byteLength = Number(binaryRaw.length);
       return {
         tag,
         tagName: "binary",
-        data: decodePayload(
-          payload,
-          LoreBinaryStruct,
-          loreMetadataRawDataOffset
-        ) as LoreBinary,
+        data: (!binaryRaw.payload || byteLength === 0
+          ? new Uint8Array(0)
+          : koffi.decode(binaryRaw.payload, "uint8_t", byteLength)) as LoreBinary,
       };
+    }
     case LoreMetadataType.CONTEXT:
       return {
         tag,
         tagName: "context",
-        data: toLoreContext(
-          decodePayload(
-            payload,
-            LoreContextStruct,
-            loreMetadataRawDataOffset
-          ) as LoreContextInternal
-        ),
+        data: toLoreContext(union.context as LoreContextInternal),
       };
     case LoreMetadataType.HASH:
       return {
         tag,
         tagName: "hash",
-        data: toLoreHash(
-          decodePayload(
-            payload,
-            LoreHashStruct,
-            loreMetadataRawDataOffset
-          ) as LoreHashInternal
-        ),
+        data: toLoreHash(union.hash as LoreHashInternal),
       };
     case LoreMetadataType.NUMERIC:
+      {# Koffi decodes uint64_t as a number when it fits in 53 bits and as a bigint
+         above that. Pass it through unchanged so large values keep their precision. #}
       return {
         tag,
         tagName: "numeric",
-        data: decodePayload(
-          payload,
-          "uint64_t",
-          loreMetadataRawDataOffset
-        ) as number,
+        data: union.numeric as number | bigint,
       };
     case LoreMetadataType.STRING:
       return {
         tag,
         tagName: "string",
-        data: fromLoreString(
-          decodePayload(
-            payload,
-            LoreStringStruct,
-            loreMetadataRawDataOffset
-          ) as { string: any; length: bigint | number }
-        ) as LoreString,
+        data: fromLoreString(union.string as { string: any; length: bigint | number }) as LoreString,
       };
     default:
       throw new Error(`Unrecognized metadata type ${tag}`)

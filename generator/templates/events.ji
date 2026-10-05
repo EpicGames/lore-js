@@ -310,6 +310,7 @@ export interface IDatatypeConvertOptions {
   loreInstanceId?: string[];
   loreBytes?: string[];
   loreBinary?: string[];
+  loreMetadata?: string[];
   enums?: IEnumConvertOption[]
   arrayTypes?: { field: string; arrayDataType: string; conversionTypes: IDatatypeConvertOptions }[];
   complexTypes?: { field: string; conversionTypes: IDatatypeConvertOptions }[];
@@ -414,20 +415,38 @@ export const parseLoreEventJSON = (loreEventJson: string): LoreEvent<string, str
   if (event.tagName === undefined) {
     (event as LoreEvent).tagName = LoreEventTagTagNameMap[eventType];
   }
-  if (isEventType(event, LoreEventTag.METADATA)) {
-    if (event.data.value.tag === undefined) {
-      switch ((event as LoreMetadataEvent<string, string, string, string>).data.value.tagName) {
-        case "address": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataType.ADDRESS; break;
-        case "boolean": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataType.BOOLEAN; break;
-        case "binary": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataType.BINARY; break;
-        case "context": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataType.CONTEXT; break;
-        case "hash": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataType.HASH; break;
-        case "numeric": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataType.NUMERIC; break;
-        case "string": (event as LoreMetadataEvent<string, string, string, string>).data.value.tag = LoreMetadataType.STRING; break;
-      }
-    }
-  }
+  fillMetadataTags(event.data, conversionConfig);
   return event;
+}
+
+{# Maps a metadata `tagName` to the numeric `tag`; the JSON form may carry only the name. #}
+export const TagNameLoreMetadataTypeMap: Record<LoreMetadata["tagName"], LoreMetadataType> = {
+  address: LoreMetadataType.ADDRESS,
+  boolean: LoreMetadataType.BOOLEAN,
+  binary: LoreMetadataType.BINARY,
+  context: LoreMetadataType.CONTEXT,
+  hash: LoreMetadataType.HASH,
+  numeric: LoreMetadataType.NUMERIC,
+  string: LoreMetadataType.STRING,
+};
+
+{# Recursively fills in the numeric `tag` of every metadata value that only has a `tagName`. #}
+const fillMetadataTags = (data: any, conversionConfig: IDatatypeConvertOptions) => {
+  if (data == null) {
+    return;
+  }
+  conversionConfig.loreMetadata?.filter((field) => isValueDefined(data, field)).forEach((field) => {
+    const value = data[field];
+    if (value.tag === undefined && value.tagName !== undefined) {
+      value.tag = TagNameLoreMetadataTypeMap[value.tagName as LoreMetadata["tagName"]];
+    }
+  });
+  conversionConfig.arrayTypes?.filter((arrayType) => isValueDefined(data, arrayType.field)).forEach((arrayType) => {
+    Array.from(data[arrayType.field] as any[]).forEach((entry: any) => fillMetadataTags({ ptr: entry }, arrayType.conversionTypes));
+  });
+  conversionConfig.complexTypes?.filter((complexType) => isValueDefined(data, complexType.field)).forEach((complexType) => {
+    fillMetadataTags(data[complexType.field], complexType.conversionTypes);
+  });
 }
 
 export const STRING_POINTERS = Symbol("lore.string_pointers");
@@ -512,6 +531,25 @@ const convertBinaryValuesToClonable = (data: any, conversionConfig: IDatatypeCon
       }
     }
   });
+  conversionConfig.loreMetadata?.forEach((field) => {
+    if (isValueDefined(data, field)) {
+      const value = data[field] as LoreMetadata<LoreContextBinary, LoreHashBinary, LoreBranchIdBinary, LoreRepositoryIdBinary, LoreInstanceIdBinary, LorePartitionBinary>;
+      switch (value.tag) {
+        case LoreMetadataType.ADDRESS:
+          value.data = {
+            hash: value.data.hash.toString() as unknown as LoreHashBinary,
+            context: value.data.context.toString() as unknown as LoreContextBinary,
+          };
+          break;
+        case LoreMetadataType.CONTEXT:
+          value.data = value.data.toString() as unknown as LoreContextBinary;
+          break;
+        case LoreMetadataType.HASH:
+          value.data = value.data.toString() as unknown as LoreHashBinary;
+          break;
+      }
+    }
+  });
   conversionConfig.arrayTypes?.filter((arrayType) => isValueDefined(data, arrayType.field)).forEach((arrayType) => {
     data[arrayType.field] = Array.from(data[arrayType.field]).map((entry: any) => convertBinaryValuesToClonable({ ptr: entry }, arrayType.conversionTypes).ptr);
   });
@@ -526,21 +564,5 @@ export const toClonableLoreEvent = <T extends LoreEvent<LoreContextBinary, LoreH
   const eventType = findLoreEventType(event);
   const conversionConfig = loreEventTagLoreConversionTypesMap[eventType];
   convertBinaryValuesToClonable(event.data, conversionConfig);
-  if (isEventType(event, LoreEventTag.METADATA)) {
-    switch (event.data.value.tag) {
-      case LoreMetadataType.ADDRESS:
-        event.data.value.data = {
-          hash: event.data.value.data.hash.toString() as unknown as LoreHashBinary,
-          context: event.data.value.data.context.toString() as unknown as LoreContextBinary,
-        };
-        break;
-      case LoreMetadataType.CONTEXT:
-        event.data.value.data = event.data.value.data.toString() as unknown as LoreContextBinary;
-        break;
-      case LoreMetadataType.HASH:
-        event.data.value.data = event.data.value.data.toString() as unknown as LoreHashBinary;
-        break;
-    }
-  }
   return event as unknown as LoreEventTagLoreEventMap<string, string, string, string>[T["tag"]];
 }

@@ -69,9 +69,10 @@
     {{ generate_conversion_type("loreAddress", ns.struct_fields, "lore_address_t") }}
     {{ generate_conversion_type("loreBranchId", ns.struct_fields, "lore_branch_id_t") }}
     {{ generate_conversion_type("loreRepositoryId", ns.struct_fields, "lore_repository_id_t") }}
-    {{ generate_conversion_type("loreInstanceId", ns.struct_fields, "loree_instance_id_t") }}
+    {{ generate_conversion_type("loreInstanceId", ns.struct_fields, "lore_instance_id_t") }}
     {{ generate_conversion_type("loreBytes", ns.struct_fields, "lore_bytes_t") }}
     {{ generate_conversion_type("loreBinary", ns.struct_fields, "lore_binary_t") }}
+    {{ generate_conversion_type("loreMetadata", ns.struct_fields, "lore_metadata_t") }}
     {% set enum_ns = namespace(has_enums = false) %}
     {% for enum_name, enum_values in enums_collection %}
       {% set enum_fields = generate_conversion_type("fields", ns.struct_fields, enum_name) %}
@@ -226,6 +227,7 @@
     LoreEventTagLoreEventMap,
     LoreEventTagTagNameMap,
     TagNameLoreEventTagMap,
+    TagNameLoreMetadataTypeMap,
     LoreEventCallbackFunction,
     LoreEventCallbackConfig,
     LoreJSStringDecodeMode,

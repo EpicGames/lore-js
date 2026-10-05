@@ -2219,6 +2219,32 @@ describe("lore-js-sdk", () => {
     ).toBe(true);
   });
 
+  test("repositoryInstanceList should return instanceId as a hex string after clone", async () => {
+    let instanceIdInCallback: string | undefined;
+    let instanceIdCloned: unknown;
+    const { gatherLogs, printLogsIfLoreCallFailed } = createErrorHandler();
+    const res = await lore.repositoryInstanceList(
+      globalArgs,
+      {},
+      {
+        callback: (event) => {
+          if (event.tag === LoreEventTag.REPOSITORY_INSTANCE) {
+            instanceIdInCallback = event.data.instanceId.toString();
+            instanceIdCloned = event.clone().data.instanceId;
+          }
+          gatherLogs(event);
+        },
+      }
+    );
+    printLogsIfLoreCallFailed(res);
+    expect(res).toBe(0);
+    expect(instanceIdInCallback).toMatch(/^[0-9a-f]{32}$/);
+    expect(instanceIdCloned).toBe(instanceIdInCallback);
+    expect(JSON.parse(JSON.stringify({ id: instanceIdCloned })).id).toBe(
+      instanceIdInCallback
+    );
+  });
+
   test("revisionInfo should return hash and parent array", async () => {
     await stageRandomFile();
     await commit();
@@ -2734,6 +2760,10 @@ describe("lore-js-sdk", () => {
               length: 0,
               streaming: false,
               localCache: false,
+              dataOut: {
+                len: 0,
+                ptr: undefined as any as Uint8Array,
+              },
             },
           ],
         },
