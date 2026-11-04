@@ -4,6 +4,7 @@
 
 import koffi, { KoffiConfig } from "koffi";
 
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -30,13 +31,13 @@ const cwd =
    binary content are unpacked under the file system path "resources/app.asar.unpacked/node_modules/".
    Loads the given library if it exists, otherwise tries to replace app.asar -> app.asar.unpacked.
 #}
-const asarResolveLibrary = (loreLibPath: string) => {
-  const asarUnpackedPath = loreLibPath.replace(
+const asarUnpackedPath = (loreLibPath: string) =>
+  loreLibPath.replace(
     /([/\\])(app\.asar)([/\\]node_modules[/\\]@lore-vcs[/\\]sdk)/,
     "$1$2.unpacked$3"
   );
-  return koffi.load(asarUnpackedPath);
-};
+
+const asarResolveLibrary = (loreLibPath: string) => koffi.load(asarUnpackedPath(loreLibPath));
 
 {# Function that figures out the dynamic library path. #}
 const getPlatformLibPath = (pkg: unknown): string => {
@@ -47,6 +48,46 @@ const getPlatformLibPath = (pkg: unknown): string => {
     return (pkg as { default: string }).default;
   }
   throw new Error("Invalid platform package export");
+};
+
+{# The Graviton package is built with target-cpu=neoverse-512tvb and dies with SIGILL on
+   CPUs older than Neoverse V1 (e.g. Graviton2, Ampere Altra), so it is only picked when the
+   kernel reports the SVE, BF16 and I8MM extensions that target enables. npm installs both
+   arm64 Linux packages, since both match os/cpu/libc. #}
+const supportsGravitonBuild = (): boolean => {
+  try {
+    const features = new Set(
+      (readFileSync("/proc/cpuinfo", "utf8").match(/^Features\s*:(.*)$/m)?.[1] ?? "")
+        .trim()
+        .split(/\s+/)
+    );
+    return ["sve", "bf16", "i8mm"].every((f) => features.has(f));
+  } catch {
+    return false;
+  }
+};
+
+const linuxArm64LibPath = () => {
+  const graviton = {
+    pkg: "@lore-vcs/sdk-arm64-graviton-linux",
+    local: join(cwd, "..", "..", "npm", "arm64-graviton-linux", "lorelib-arm64-graviton-linux.so"),
+  };
+  const generic = {
+    pkg: "@lore-vcs/sdk-arm64-unknown-linux",
+    local: join(cwd, "..", "..", "npm", "arm64-unknown-linux", "lorelib-arm64-unknown-linux.so"),
+  };
+  const candidates = supportsGravitonBuild() ? [graviton, generic] : [generic];
+  {# Both packages are installed side by side, so a package that resolves may still lack its
+     library (packagers that copy one platform package, a workspace built for the other target). #}
+  for (const { pkg } of candidates) {
+    try {
+      const libPath = getPlatformLibPath(require(pkg));
+      if (existsSync(asarUnpackedPath(libPath))) {
+        return libPath;
+      }
+    } catch {}
+  }
+  return (candidates.find(({ local }) => existsSync(local)) ?? candidates[0]).local;
 };
 
 const defaultLibPath = () => {
@@ -68,13 +109,7 @@ const defaultLibPath = () => {
     }
   } else if (process.platform === "linux") {
     if (process.arch === "arm64") {
-      try {
-        return getPlatformLibPath(
-          require("@lore-vcs/sdk-arm64-graviton-linux")
-        );
-      } catch {
-        return join(cwd, "..", "..", "npm", "arm64-graviton-linux", "lorelib-arm64-graviton-linux.so");
-      }
+      return linuxArm64LibPath();
     } else {
       try {
         return getPlatformLibPath(

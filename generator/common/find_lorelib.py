@@ -4,6 +4,10 @@ Copyright Epic Games, Inc. All Rights Reserved.
 Gets the Lore header and lib
 
 LORE_BUILD_PATH: Use a locally build lorelib or a pre-built lorelib
+LORE_JS_TARGET: On arm64 Linux, the npm package to build: arm64-graviton-linux
+                (default, Graviton3+ tuned) or arm64-unknown-linux (generic).
+                Both libraries arrive as the same liblore.so, so the host
+                cannot tell them apart.
 """
 
 import os
@@ -19,7 +23,11 @@ MACHINE = platform.machine().lower().replace("x86_64", "amd64")
 
 WINDOWS_LIB_NAME = "lorelib-amd64-unknown-windows.dll"
 DARWIN_LIB_NAME = "lorelib-arm64-apple-darwin.dylib"
-LINUX_ARM_LIB_NAME = "lorelib-arm64-graviton-linux.so"
+LINUX_ARM_LIB_NAMES = {
+    "arm64-graviton-linux": "lorelib-arm64-graviton-linux.so",
+    "arm64-unknown-linux": "lorelib-arm64-unknown-linux.so",
+}
+LINUX_ARM_DEFAULT_TARGET = "arm64-graviton-linux"
 LINUX_X64_LIB_NAME = "lorelib-amd64-unknown-linux.so"
 
 HEADER_NAME_RE = re.compile(r"^lore(-v\d+\.\d+\.\d+(-nightly-\d+(-[\w.-]+)?)?)?\.h$")
@@ -51,7 +59,13 @@ def _wheel_lib_name():
         return WINDOWS_LIB_NAME
     elif SYSTEM == "linux":
         if MACHINE in ("arm64", "aarch64"):
-            return LINUX_ARM_LIB_NAME
+            target = os.environ.get("LORE_JS_TARGET") or LINUX_ARM_DEFAULT_TARGET
+            if target not in LINUX_ARM_LIB_NAMES:
+                sys.exit(
+                    f"LORE_JS_TARGET={target} is not an arm64 Linux target "
+                    f"(expected one of {sorted(LINUX_ARM_LIB_NAMES)})"
+                )
+            return LINUX_ARM_LIB_NAMES[target]
         return LINUX_X64_LIB_NAME
     elif SYSTEM == "darwin":
         return DARWIN_LIB_NAME

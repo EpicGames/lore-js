@@ -40,6 +40,9 @@ importers:
       '@lore-vcs/sdk-arm64-graviton-linux':
         specifier: workspace:*
         version: link:npm/arm64-graviton-linux
+      '@lore-vcs/sdk-arm64-unknown-linux':
+        specifier: workspace:*
+        version: link:npm/arm64-unknown-linux
 
   examples:
     dependencies:
@@ -54,6 +57,8 @@ importers:
   npm/arm64-apple-darwin: {}
 
   npm/arm64-graviton-linux: {}
+
+  npm/arm64-unknown-linux: {}
 
 packages:
 

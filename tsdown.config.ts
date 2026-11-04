@@ -14,5 +14,6 @@ export default defineConfig({
     "@lore-vcs/sdk-amd64-unknown-windows",
     "@lore-vcs/sdk-arm64-apple-darwin",
     "@lore-vcs/sdk-arm64-graviton-linux",
+    "@lore-vcs/sdk-arm64-unknown-linux",
   ],
 });

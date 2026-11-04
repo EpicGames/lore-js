@@ -13,8 +13,6 @@ from common.generate import generate_templates
 from registry import build_augmented
 from common.find_lorelib import (
     LIB_DIR,
-    SYSTEM,
-    MACHINE,
     _wheel_lib_name,
 )
 
@@ -46,16 +44,9 @@ GENERATE_TARGETS = [
 
 
 def _platform_lib_directory():
-    if SYSTEM == "windows":
-        return os.path.join("npm", "amd64-unknown-windows")
-    elif SYSTEM == "linux":
-        if MACHINE in ("arm64", "aarch64"):
-            return os.path.join("npm", "arm64-graviton-linux")
-        return os.path.join("npm", "amd64-unknown-linux")
-    elif SYSTEM == "darwin":
-        return os.path.join("npm", "arm64-apple-darwin")
-    else:
-        sys.exit(f"unsupported platform found: {SYSTEM}")
+    # Library files are named lorelib-<npm target>.<ext>.
+    target = os.path.splitext(_wheel_lib_name())[0].removeprefix("lorelib-")
+    return os.path.join("npm", target)
 
 
 def copy_lib_to_npm_dir():
